@@ -74,6 +74,7 @@
   .mini-bal-val.pos { color: var(--income); }
   .mini-bal-val.neg { color: var(--expense); }
   .mini-bal-val.zero { color: var(--muted); }
+  .mini-bal-chip.mine { background: rgba(196,181,253,0.1); border-color: rgba(196,181,253,0.3); }
 
   /* ── Transaction list ── */
   .tx-list { padding: 0 16px; }
@@ -180,6 +181,7 @@ let state = {
   selectedMonth: new Date().toISOString().slice(0,7),
   historialFilter: "all",
   categoryFilter: "all",
+  sibFilter: "all",
   resumenFilter: new Date().toISOString().slice(0,7), // default = current month
   // Expense form — subtype: "expense" | "mother_expense"
   expForm: {
@@ -343,9 +345,30 @@ async function submitIncome() {
 }
 
 async function deleteTransaction(id) {
-  if (!confirm("¿Eliminar esta transacción?")) return;
+  const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.");
+  if (!confirmed) return;
   try { await api("deleteTransaction", { id }); showToast("Eliminado"); loadTransactions(); }
   catch(e) { showToast("Error al eliminar", true); }
+}
+
+function showConfirm(title, subtitle) {
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;";
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:320px;width:100%;text-align:center;">
+        <div style="font-size:1.5rem;margin-bottom:8px;">🗑️</div>
+        <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:6px;">${title}</div>
+        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:24px;">${subtitle}</div>
+        <div style="display:flex;gap:10px;">
+          <button id="confirm-cancel" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:0.9rem;cursor:pointer;">Cancelar</button>
+          <button id="confirm-ok" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--expense);color:#1a0f0f;font-family:inherit;font-size:0.9rem;font-weight:600;cursor:pointer;">Eliminar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById("confirm-cancel").onclick = () => { overlay.remove(); resolve(false); };
+    document.getElementById("confirm-ok").onclick    = () => { overlay.remove(); resolve(true); };
+  });
 }
 
 // ── Computed balances ──────────────────────────────────
@@ -492,6 +515,20 @@ function getYears() {
   return [...years].sort((a,b)=>b.localeCompare(a));
 }
 
+const AI_PLACEHOLDERS = [
+  'Ej: "Mery pagó 15000 en el super ayer"',
+  'Ej: "Mamá transfirió 500 lucas a Vero"',
+  'Ej: "ABL con la cuenta de mamá, 42000"',
+  'Ej: "Pagamos el celu de mamá, 22000 con tarjeta"',
+  'Ej: "Jubilación de enero, 496000 pesos"',
+  'Ej: "Fede pagó expensas la semana pasada, 96 mil"',
+  'Ej: "Salimos a comer el sábado, 35000"',
+];
+function getAIPlaceholder() {
+  const idx = Math.floor(Date.now() / 8000) % AI_PLACEHOLDERS.length;
+  return AI_PLACEHOLDERS[idx];
+}
+
 function txIcon(t) {
   if (t.type === "expense") {
     const cat = t.category || "";
@@ -612,12 +649,15 @@ function renderTab() {
 // ── Mini balances (always sorted) ─────────────────────
 function renderMiniBalances() {
   const sorted = sortedBalances();
+  const myName = state.user?.firstName || "";
   return `<div class="mini-balance">
-    ${sorted.map(s=>`
-      <div class="mini-bal-chip">
-        <div class="mini-bal-name">${s.name}</div>
-        <div class="mini-bal-val ${s.net>0?"pos":s.net<0?"neg":"zero"}">${fmt(s.net)}</div>
-      </div>`).join("")}
+    ${sorted.map(s => {
+      const isMe = s.name.toLowerCase() === myName.toLowerCase();
+      return `<div class="mini-bal-chip${isMe?" mine":""}">
+        <div class="mini-bal-name">${isMe ? "▶ "+s.name : s.name}</div>
+        <div class="mini-bal-val ${s.net>0?"pos":s.net<0?"neg":"zero"}" style="${isMe?"font-size:1.1rem;":""}">${fmt(s.net)}</div>
+      </div>`;
+    }).join("")}
   </div>`;
 }
 
@@ -628,7 +668,7 @@ function renderAIBox() {
     <div style="background:var(--surface2);border:1px solid rgba(196,181,253,0.2);border-radius:12px;padding:12px;margin-bottom:14px;">
       <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mother);margin-bottom:8px;">✨ Entrada con IA</div>
       <div style="display:flex;gap:8px;">
-        <input id="ai-text" type="text" placeholder='Ej: "Pagué $15000 de luz con la tarjeta de mamá"'
+        <input id="ai-text" type="text" placeholder="${getAIPlaceholder()}"
           style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:0.85rem;"
           value="${state.aiText}" onkeydown="if(event.key==='Enter')sendAI()">
         <button onclick="sendAI()" ${state.aiLoading?"disabled":""} style="background:var(--mother);color:#1a1a2e;border:none;border-radius:10px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:42px;height:42px;">
@@ -774,7 +814,7 @@ function renderIngresos() {
 // ════════════════════════════════════════════════════
 // HISTORIAL TAB
 // ════════════════════════════════════════════════════
-function renderFilterBar(filterKey, onChange, showCategory=false) {
+function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false) {
   const f = state[filterKey];
   const years = getYears();
   const months = getLast12Months();
@@ -785,14 +825,19 @@ function renderFilterBar(filterKey, onChange, showCategory=false) {
     ...months.map(m=>({ val:m, label:formatMonth(m) })),
   ];
   return `
-    <div style="padding:12px 16px 0;display:flex;gap:8px;">
-      <select onchange="${onChange}(this.value)" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
+    <div style="padding:12px 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
+      <select onchange="${onChange}(this.value)" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
         ${periodOptions.map(o=>`<option value="${o.val}" ${f===o.val?"selected":""}>${o.label}</option>`).join("")}
       </select>
       ${showCategory ? `
-      <select onchange="setCategoryFilter(this.value)" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
-        <option value="all" ${state.categoryFilter==="all"?"selected":""}>Todas las categorías</option>
+      <select onchange="setCategoryFilter(this.value)" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
+        <option value="all" ${state.categoryFilter==="all"?"selected":""}>Categorías</option>
         ${CONFIG.CATEGORIES.map(c=>`<option value="${c.replace(/^[^\s]+\s/,"")}" ${state.categoryFilter===c.replace(/^[^\s]+\s/,"")?"selected":""}>${c}</option>`).join("")}
+      </select>` : ""}
+      ${showSib ? `
+      <select onchange="setSibFilter(this.value)" style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
+        <option value="all" ${state.sibFilter==="all"?"selected":""}>Todos</option>
+        ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${state.sibFilter===s?"selected":""}>${s}</option>`).join("")}
       </select>` : ""}
     </div>`;
 }
@@ -806,10 +851,13 @@ function renderMovimientos() {
   if (state.categoryFilter !== "all") {
     txs = txs.filter(t => (t.category||"") === state.categoryFilter);
   }
+  if (state.sibFilter !== "all") {
+    txs = txs.filter(t => t.paidBy === state.sibFilter || t.recipient === state.sibFilter || t.loggedBy?.includes(state.sibFilter));
+  }
 
   const balSection = "";
 
-  const filterBar = renderFilterBar("historialFilter", "setHistorialFilter", true);
+  const filterBar = renderFilterBar("historialFilter", "setHistorialFilter", true, true);
 
   if (state.loading) return balSection + filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
 
@@ -1079,6 +1127,7 @@ window.submitIncome  = submitIncome;
 window.changeMonth   = m => { setState({ selectedMonth: m }); loadTransactions(); };
 window.setHistorialFilter = f => setState({ historialFilter: f });
 window.setCategoryFilter   = f => setState({ categoryFilter: f });
+window.setSibFilter        = f => setState({ sibFilter: f });
 window.setResumenFilter   = f => setState({ resumenFilter: f });
 window.signOut       = () => { window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
 
