@@ -74,7 +74,7 @@
   .mini-bal-val.pos { color: var(--income); }
   .mini-bal-val.neg { color: var(--expense); }
   .mini-bal-val.zero { color: var(--muted); }
-  .mini-bal-chip.mine { background: rgba(196,181,253,0.1); border-color: rgba(196,181,253,0.3); }
+  .mini-bal-chip.mine { background: rgba(196,181,253,0.08); border-color: rgba(196,181,253,0.4); box-shadow: 0 0 0 1px rgba(196,181,253,0.2); }
 
   /* ── Transaction list ── */
   .tx-list { padding: 0 16px; }
@@ -93,7 +93,8 @@
   .tx-amount.mother_expense { color: var(--expense); }
   .tx-amount.income         { color: var(--income); }
   .tx-amount.transfer       { color: var(--mother); }
-  .tx-del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1.1rem; }
+  .tx-del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1rem; }
+  .tx-edit { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 0.85rem; }
 
   /* ── Summary / Resumen ── */
   .section { padding: 16px 16px 0; }
@@ -191,6 +192,7 @@ let state = {
   },
   // Income/transfer form — subtype: "transfer" | "income"
   aiText: "",
+  showTutorial: false,
   aiLoading: false,
   aiResult: null,
   incForm: {
@@ -289,6 +291,20 @@ async function submitExpense() {
   const f = state.expForm;
   if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
   if (f.subtype === "expense" && !f.paidBy) { showToast("Seleccioná quién pagó", true); return; }
+  // Duplicate detection
+  const amt = parseFloat(f.amount);
+  const dup = state.transactions.find(t =>
+    parseFloat(t.amount) === amt &&
+    (t.date || t.timestamp || "").slice(0,10) === f.date &&
+    t.type === f.subtype
+  );
+  if (dup) {
+    const ok = await showConfirm(
+      "¿Posible duplicado?",
+      `Ya existe un ${f.subtype === "expense" ? "gasto" : "gasto de mamá"} de ${fmt(amt)} el ${fmtDateDisplay(f.date)}. ¿Guardás igual?`
+    );
+    if (!ok) return;
+  }
   setState({ loading: true });
   try {
     await api("addTransaction", {
@@ -305,9 +321,10 @@ async function submitExpense() {
     const defaultPaidBy = matchSibling(state.user?.firstName);
     setState({
       loading: false,
+      aiText: "", aiLoading: false, aiResult: null,
       expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() },
     });
-    showToast("Gasto guardado ✓");
+    showToast("✓ Gasto guardado");
     loadTransactions();
   } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
 }
@@ -350,6 +367,74 @@ async function deleteTransaction(id) {
   try { await api("deleteTransaction", { id }); showToast("Eliminado"); loadTransactions(); }
   catch(e) { showToast("Error al eliminar", true); }
 }
+
+function editTransaction(id, txJson) {
+  let tx;
+  try { tx = JSON.parse(txJson.replace(/&#39;/g,"'")); } catch(e) { return; }
+  
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.9);z-index:9999;display:flex;align-items:flex-end;justify-content:center;";
+  const cats = CONFIG.CATEGORIES.map(c => `<option value="${catShort(c)}" ${catShort(c)===tx.category?"selected":""}>${c}</option>`).join("");
+  const sibs = CONFIG.SIBLINGS.map(s => `<option value="${s}" ${s===tx.paidBy?"selected":""}>${s}</option>`).join("");
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;">
+      <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+        ✏️ Editar transacción
+        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Fecha</label>
+        <input id="edit-date" type="date" value="${tx.date}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Monto</label>
+        <input id="edit-amount" type="number" value="${tx.amount}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Descripción</label>
+        <input id="edit-desc" type="text" value="${tx.description||""}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">
+      </div>
+      ${tx.category ? `<div style="margin-bottom:12px;">
+        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Categoría</label>
+        <select id="edit-cat" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">${cats}</select>
+      </div>` : ""}
+      ${tx.paidBy && CONFIG.SIBLINGS.includes(tx.paidBy) ? `<div style="margin-bottom:16px;">
+        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Pagado por</label>
+        <select id="edit-paidby" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">${sibs}</select>
+      </div>` : ""}
+      <button onclick="saveEdit('${id}',${JSON.stringify(tx).replace(/'/g,"\'")})" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;">Guardar cambios</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if(e.target===overlay) overlay.remove(); });
+}
+
+window.saveEdit = async (id, original) => {
+  const date    = document.getElementById("edit-date")?.value || original.date;
+  const amount  = parseFloat(document.getElementById("edit-amount")?.value) || parseFloat(original.amount);
+  const desc    = document.getElementById("edit-desc")?.value || original.description;
+  const cat     = document.getElementById("edit-cat")?.value || original.category;
+  const paidBy  = document.getElementById("edit-paidby")?.value || original.paidBy;
+  
+  // Delete old, add new with changes + edit log
+  const editNote = `[Editado ${new Date().toLocaleDateString("es-AR")} por ${state.user?.firstName}]`;
+  try {
+    await api("deleteTransaction", { id });
+    await api("addTransaction", {
+      type: original.type,
+      amount,
+      description: desc + " " + editNote,
+      category: cat,
+      paidBy,
+      recipient: original.recipient || "",
+      paymentMethod: original.paymentMethod || "",
+      date,
+      source: "manual",
+    });
+    document.querySelector("div[style*='inset:0']")?.remove();
+    showToast("✓ Cambios guardados");
+    loadTransactions();
+  } catch(e) { showToast("Error al guardar", true); }
+};
 
 function showConfirm(title, subtitle) {
   return new Promise(resolve => {
@@ -470,6 +555,9 @@ function initGoogleSignIn() {
         expForm: { ...state.expForm, paidBy: matched },
       });
       loadTransactions();
+      // Show tutorial on first visit
+      const seen = localStorage.getItem("mf_tutorial_seen");
+      if (!seen) setTimeout(() => setState({ showTutorial: true }), 1000);
     },
     auto_select: true,
   });
@@ -603,6 +691,7 @@ function render() {
       ${renderBottomNav()}
       <div style="position:fixed;bottom:0;left:0;right:0;height:env(safe-area-inset-bottom,0px);background:var(--surface);z-index:99;"></div>
     </div>
+    ${state.showTutorial ? renderTutorial() : ""}
     <div id="toast" class="toast"></div>
     ${state.loading ? `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:998;gap:16px;">
       <div class="spinner" style="width:36px;height:36px;border-width:3px;"></div>
@@ -634,6 +723,7 @@ function renderAuth() {
         <div id="g-signin-btn" style="display:flex;justify-content:center;margin-top:8px;"></div>
       </div>
     </div>
+    ${state.showTutorial ? renderTutorial() : ""}
     <div id="toast" class="toast"></div>`;
 }
 
@@ -644,9 +734,9 @@ function renderTopbar() {
         <img src="logo.png" style="width:32px;height:32px;border-radius:8px;">
         Mama<span>Fund</span>
       </div>
-      <div class="topbar-user">
-        ${state.user.firstName}<br>
-        <button onclick="signOut()">Salir</button>
+      <div class="topbar-user" style="display:flex;align-items:center;gap:10px;">
+        <button onclick="setState({showTutorial:true})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:99px;width:22px;height:22px;font-size:0.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">?</button>
+        <div style="text-align:right;">${state.user.firstName}<br><button onclick="signOut()" style="background:none;border:none;color:var(--muted);font-size:0.7rem;cursor:pointer;text-decoration:underline;">Salir</button></div>
       </div>
     </div>`;
 }
@@ -677,8 +767,8 @@ function renderMiniBalances() {
     ${sorted.map(s => {
       const isMe = s.name.toLowerCase() === myName.toLowerCase();
       return `<div class="mini-bal-chip${isMe?" mine":""}">
-        <div class="mini-bal-name">${isMe ? "▶ "+s.name : s.name}</div>
-        <div class="mini-bal-val ${s.net>0?"pos":s.net<0?"neg":"zero"}" style="${isMe?"font-size:1.1rem;":""}">${fmt(s.net)}</div>
+        <div class="mini-bal-name" style="${isMe?"color:var(--text);font-weight:600;":""}">${s.name}</div>
+        <div class="mini-bal-val ${s.net>0?"pos":s.net<0?"neg":"zero"}" style="${isMe?"font-size:1.05rem;":""}">${fmt(s.net)}</div>
       </div>`;
     }).join("")}
   </div>`;
@@ -860,6 +950,7 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
       ${showSib ? `
       <select onchange="setSibFilter(this.value)" style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
         <option value="all" ${state.sibFilter==="all"?"selected":""}>👤 Persona</option>
+        <option value="Mamá" ${state.sibFilter==="Mamá"?"selected":""}>Mamá</option>
         ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${state.sibFilter===s?"selected":""}>${s}</option>`).join("")}
       </select>` : ""}
     </div>`;
@@ -876,12 +967,10 @@ function renderMovimientos() {
   }
   if (state.sibFilter !== "all") {
     const s = state.sibFilter;
-    txs = txs.filter(t =>
-      t.paidBy === s ||
-      t.recipient === s ||
-      (t.type === "income" && (t.description||"").includes(s)) ||
-      (t.source_type && (t.source_type||"").includes(s))
-    );
+    txs = txs.filter(t => {
+      if (s === "Mamá") return t.type === "mother_expense" || t.paidBy === "Mamá" || t.from === "Mamá";
+      return t.paidBy === s || t.recipient === s;
+    });
   }
 
   const balSection = "";
@@ -922,6 +1011,7 @@ function renderMovimientos() {
               </div>
             </div>
             <div class="tx-amount ${t.type}">${fmt(parseFloat(t.amount||0))}</div>
+            <button class="tx-edit" data-edit="${t.id}" data-tx='${JSON.stringify({type:t.type,amount:t.amount,description:t.description,category:t.category,paidBy:t.paidBy,recipient:t.recipient,date:(t.date||t.timestamp||"").slice(0,10),paymentMethod:t.paymentMethod||""}).replace(/'/g,"&#39;")}' title="Editar">✏️</button>
             <button class="tx-del" data-del="${t.id}">×</button>
           </div>`).join("")}
       `).join("")}
@@ -1079,6 +1169,38 @@ function renderResumen() {
       </div>
     </div>`;
 }
+// ── Tutorial ──────────────────────────────────────────────
+function renderTutorial() {
+  const steps = [
+    { icon:"💰", title:"Gastos", desc:"Registrá gastos pagados por los hermanos o directamente de la cuenta de mamá." },
+    { icon:"📤", title:"Ingresos y transferencias", desc:"Registrá cuando mamá transfiere plata a un hermano, o cuando entra un ingreso." },
+    { icon:"📋", title:"Historial", desc:"Ve todos los movimientos. Filtrá por fecha, categoría o persona." },
+    { icon:"📊", title:"Resumen", desc:"Estado actual de la cuenta de mamá y el saldo de cada hermano en tiempo real." },
+    { icon:"✨", title:"Entrada con IA", desc:'Escribí en lenguaje natural: "Mery pagó 15000 en el super ayer" y la IA completa el formulario.' },
+  ];
+  return `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.95);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:360px;width:100%;">
+      <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;margin-bottom:4px;">Bienvenido a</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:1.8rem;color:var(--mother);margin-bottom:20px;font-style:italic;">MamaFund</div>
+      <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:24px;">
+        ${steps.map(s=>`
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="font-size:1.4rem;flex-shrink:0;width:32px;text-align:center;">${s.icon}</div>
+            <div>
+              <div style="font-weight:600;font-size:0.9rem;margin-bottom:2px;">${s.title}</div>
+              <div style="font-size:0.8rem;color:var(--muted);line-height:1.4;">${s.desc}</div>
+            </div>
+          </div>`).join("")}
+      </div>
+      <button onclick="closeTutorial()" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;">¡Entendido, empecemos!</button>
+    </div>
+  </div>`;
+}
+window.closeTutorial = () => {
+  localStorage.setItem("mf_tutorial_seen", "1");
+  setState({ showTutorial: false });
+};
+
 // ── SVG donut chart ────────────────────────────────────
 function buildDonut(entries, total) {
   if (!total) return "";
@@ -1119,6 +1241,9 @@ function attachEvents() {
   );
   document.querySelectorAll("[data-del]").forEach(btn =>
     btn.addEventListener("click", () => deleteTransaction(btn.dataset.del))
+  );
+  document.querySelectorAll("[data-edit]").forEach(btn =>
+    btn.addEventListener("click", () => editTransaction(btn.dataset.edit, btn.dataset.tx))
   );
   const se = (id, cb) => { const el=document.getElementById(id); if(el) el.addEventListener("input",cb); };
   se("ef-date", e=>{
