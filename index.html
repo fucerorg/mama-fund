@@ -364,8 +364,11 @@ async function submitIncome() {
 async function deleteTransaction(id) {
   const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.");
   if (!confirmed) return;
-  try { await api("deleteTransaction", { id }); showToast("Eliminado"); loadTransactions(); }
-  catch(e) { showToast("Error al eliminar", true); }
+  try {
+    await api("deleteTransaction", { id });
+    await loadTransactions();
+    setTimeout(() => showToast("✓ Eliminado"), 50);
+  } catch(e) { showToast("Error al eliminar", true); }
 }
 
 function editTransaction(id, txJson) {
@@ -421,8 +424,11 @@ window.saveEdit = async (id, original) => {
   const desc    = document.getElementById("edit-desc")?.value || original.description;
   const cat     = document.getElementById("edit-cat")?.value || original.category;
   const paidBy  = document.getElementById("edit-paidby")?.value || original.paidBy;
-  
-  // Delete old, add new with changes + edit log
+
+  // Show loading inside overlay
+  const saveBtn = document.getElementById("edit-save-btn");
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<div class="spinner" style="margin:auto;border-top-color:#1a1a2e;border-color:rgba(26,26,46,0.3);"></div>'; }
+
   const editNote = `[Editado ${new Date().toLocaleDateString("es-AR")} por ${state.user?.firstName}]`;
   try {
     await api("deleteTransaction", { id });
@@ -438,10 +444,13 @@ window.saveEdit = async (id, original) => {
       source: "manual",
     });
     document.getElementById("edit-overlay")?.remove();
-    loadTransactions();
+    await loadTransactions();
     setState({ tab: "movimientos" });
     setTimeout(() => showToast("✓ Cambios guardados"), 100);
-  } catch(e) { showToast("Error al guardar", true); }
+  } catch(e) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = "Guardar cambios"; }
+    showToast("Error al guardar", true);
+  }
 };
 
 function showConfirm(title, subtitle) {
@@ -590,7 +599,7 @@ function showToast(msg, isError=false) {
   el.textContent = msg;
   el.className = "toast show" + (isError?" error":"");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = "toast"; }, 4000);
+  toastTimer = setTimeout(() => { el.className = "toast"; }, 8000);
 }
 
 // ── Formatters ─────────────────────────────────────────
@@ -1019,7 +1028,7 @@ function renderMovimientos() {
               </div>
             </div>
             <div class="tx-amount ${t.type}">${fmt(parseFloat(t.amount||0))}</div>
-            <button class="tx-edit" data-edit="${t.id}" data-tx='${JSON.stringify({type:t.type,amount:t.amount,description:t.description,category:t.category,paidBy:t.paidBy,recipient:t.recipient,date:(t.date||t.timestamp||"").slice(0,10),paymentMethod:t.paymentMethod||""}).replace(/'/g,"&#39;")}' title="Editar">✏️</button>
+            <button class="tx-edit" data-edit="${t.id}" data-tx='${JSON.stringify({type:t.type,amount:t.amount,description:t.description,category:t.category,paidBy:t.paidBy,recipient:t.recipient,date:(t.date||t.timestamp||"").slice(0,10),paymentMethod:t.paymentMethod||""}).replace(/'/g,"&#39;")}' title="Editar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
             <button class="tx-del" data-del="${t.id}">×</button>
           </div>`).join("")}
       `).join("")}
