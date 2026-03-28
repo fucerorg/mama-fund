@@ -455,9 +455,17 @@ function initGoogleSignIn() {
     callback: (response) => {
       const payload = parseJwt(response.credential);
       const firstName = payload.name?.split(" ")[0] || payload.name;
-      const matched = matchSibling(firstName);
+      // Map known emails to sibling names explicitly
+      const emailToSibling = {
+        "admin@fucer.org": "Fede",
+        "coroleu@gmail.com": "Fede",
+        "mery@fucer.org": "Mery",
+        "merycoroleu@hotmail.com": "Mery",
+        "verocoroleu@fucer.org": "Vero",
+      };
+      const matched = emailToSibling[payload.email] || matchSibling(firstName);
       setState({
-        user: { name: payload.name, firstName, email: payload.email },
+        user: { name: payload.name, firstName: matched, email: payload.email },
         idToken: response.credential,
         expForm: { ...state.expForm, paidBy: matched },
       });
@@ -516,18 +524,25 @@ function getYears() {
 }
 
 const AI_PLACEHOLDERS = [
-  'Ej: "Mery pagó 15000 en el super ayer"',
-  'Ej: "Mamá transfirió 500 lucas a Vero"',
-  'Ej: "ABL con la cuenta de mamá, 42000"',
-  'Ej: "Pagamos el celu de mamá, 22000 con tarjeta"',
-  'Ej: "Jubilación de enero, 496000 pesos"',
-  'Ej: "Fede pagó expensas la semana pasada, 96 mil"',
-  'Ej: "Salimos a comer el sábado, 35000"',
+  '"Mery pagó 15000 en el super ayer"',
+  '"Mamá transfirió 500 lucas a Vero"',
+  '"ABL con la cuenta de mamá, 42000"',
+  '"Celu de mamá, 22000 con tarjeta"',
+  '"Jubilación de enero, 496000 pesos"',
+  '"Fede pagó expensas la semana pasada, 96 mil"',
+  '"Salimos a comer el sábado, 35000"',
+  '"Transferencia de 300 lucas a Mery"',
 ];
+let aiPlaceholderIdx = 0;
 function getAIPlaceholder() {
-  const idx = Math.floor(Date.now() / 8000) % AI_PLACEHOLDERS.length;
-  return AI_PLACEHOLDERS[idx];
+  return AI_PLACEHOLDERS[aiPlaceholderIdx % AI_PLACEHOLDERS.length];
 }
+// Rotate placeholder every 4 seconds
+setInterval(() => {
+  aiPlaceholderIdx++;
+  const el = document.getElementById("ai-text");
+  if (el && !el.value) el.placeholder = getAIPlaceholder();
+}, 4000);
 
 function txIcon(t) {
   if (t.type === "expense") {
@@ -594,6 +609,14 @@ function render() {
       <div style="color:var(--muted);font-size:0.85rem;">Guardando...</div>
     </div>` : ""}`;
   attachEvents();
+  // Rotate AI placeholder every 5 seconds
+  clearInterval(window._aiPlaceholderInterval);
+  window._aiPlaceholderInterval = setInterval(() => {
+    const el = document.getElementById("ai-text");
+    if (el && !el.value && document.activeElement !== el) {
+      el.placeholder = getAIPlaceholder();
+    }
+  }, 5000);
 }
 
 function scheduleGoogleInit() {
@@ -668,7 +691,7 @@ function renderAIBox() {
     <div style="background:var(--surface2);border:1px solid rgba(196,181,253,0.2);border-radius:12px;padding:12px;margin-bottom:14px;">
       <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mother);margin-bottom:8px;">✨ Entrada con IA</div>
       <div style="display:flex;gap:8px;">
-        <input id="ai-text" type="text" placeholder="${getAIPlaceholder()}"
+        <input id="ai-text" type="text" placeholder="${AI_PLACEHOLDERS[aiPlaceholderIdx % AI_PLACEHOLDERS.length]}"
           style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:0.85rem;"
           value="${state.aiText}" onkeydown="if(event.key==='Enter')sendAI()">
         <button onclick="sendAI()" ${state.aiLoading?"disabled":""} style="background:var(--mother);color:#1a1a2e;border:none;border-radius:10px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:42px;height:42px;">
@@ -827,16 +850,16 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
   return `
     <div style="padding:12px 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
       <select onchange="${onChange}(this.value)" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
-        ${periodOptions.map(o=>`<option value="${o.val}" ${f===o.val?"selected":""}>${o.label}</option>`).join("")}
+        ${periodOptions.map(o=>`<option value="${o.val}" ${f===o.val?"selected":""}>${f===o.val?"📅 ":""}${o.label}</option>`).join("")}
       </select>
       ${showCategory ? `
       <select onchange="setCategoryFilter(this.value)" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
-        <option value="all" ${state.categoryFilter==="all"?"selected":""}>Categorías</option>
+        <option value="all" ${state.categoryFilter==="all"?"selected":""}>🏷️ Categoría</option>
         ${CONFIG.CATEGORIES.map(c=>`<option value="${c.replace(/^[^\s]+\s/,"")}" ${state.categoryFilter===c.replace(/^[^\s]+\s/,"")?"selected":""}>${c}</option>`).join("")}
       </select>` : ""}
       ${showSib ? `
       <select onchange="setSibFilter(this.value)" style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
-        <option value="all" ${state.sibFilter==="all"?"selected":""}>Todos</option>
+        <option value="all" ${state.sibFilter==="all"?"selected":""}>👤 Persona</option>
         ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${state.sibFilter===s?"selected":""}>${s}</option>`).join("")}
       </select>` : ""}
     </div>`;
@@ -852,7 +875,13 @@ function renderMovimientos() {
     txs = txs.filter(t => (t.category||"") === state.categoryFilter);
   }
   if (state.sibFilter !== "all") {
-    txs = txs.filter(t => t.paidBy === state.sibFilter || t.recipient === state.sibFilter || t.loggedBy?.includes(state.sibFilter));
+    const s = state.sibFilter;
+    txs = txs.filter(t =>
+      t.paidBy === s ||
+      t.recipient === s ||
+      (t.type === "income" && (t.description||"").includes(s)) ||
+      (t.source_type && (t.source_type||"").includes(s))
+    );
   }
 
   const balSection = "";
