@@ -385,7 +385,8 @@ function editTransaction(id, txJson) {
       </div>
       <div style="margin-bottom:12px;">
         <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Fecha</label>
-        <input id="edit-date" type="date" value="${tx.date}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">
+        <input id="edit-date" type="date" value="${tx.date}" style="width:100%;max-width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;-webkit-appearance:none;appearance:none;">
+        <div id="edit-date-label" style="font-size:0.78rem;color:var(--mother);margin-top:4px;">${fmtDateDisplay(tx.date)}</div>
       </div>
       <div style="margin-bottom:12px;">
         <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Monto</label>
@@ -408,6 +409,10 @@ function editTransaction(id, txJson) {
   document.body.appendChild(overlay);
   overlay.addEventListener("click", e => { if(e.target===overlay) overlay.remove(); });
   document.getElementById("edit-save-btn").addEventListener("click", () => window.saveEdit(id, tx));
+  document.getElementById("edit-date").addEventListener("input", e => {
+    const lbl = document.getElementById("edit-date-label");
+    if (lbl) lbl.textContent = fmtDateDisplay(e.target.value);
+  });
 }
 
 window.saveEdit = async (id, original) => {
@@ -585,7 +590,7 @@ function showToast(msg, isError=false) {
   el.textContent = msg;
   el.className = "toast show" + (isError?" error":"");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = "toast"; }, 2500);
+  toastTimer = setTimeout(() => { el.className = "toast"; }, 4000);
 }
 
 // ── Formatters ─────────────────────────────────────────
