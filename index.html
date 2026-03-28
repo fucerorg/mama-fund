@@ -324,10 +324,8 @@ async function submitExpense() {
       aiText: "", aiLoading: false, aiResult: null,
       expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() },
     });
-    showToast("✓ Gasto guardado");
-    // Clear AI result to show form is fresh
-    state.aiResult = null; state.aiText = "";
     loadTransactions();
+    setTimeout(() => showToast("✓ Gasto guardado"), 50);
   } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
 }
 
@@ -358,8 +356,8 @@ async function submitIncome() {
   aiResult: null,
   incForm: { ...f, amount: "", description: "", date: today() },
     });
-    showToast("Registrado ✓");
     loadTransactions();
+    setTimeout(() => showToast("✓ Registrado"), 50);
   } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
 }
 
@@ -375,6 +373,7 @@ function editTransaction(id, txJson) {
   try { tx = JSON.parse(txJson.replace(/&#39;/g,"'")); } catch(e) { return; }
   
   const overlay = document.createElement("div");
+  overlay.id = "edit-overlay";
   overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.9);z-index:9999;display:flex;align-items:flex-end;justify-content:center;";
   const cats = CONFIG.CATEGORIES.map(c => `<option value="${catShort(c)}" ${catShort(c)===tx.category?"selected":""}>${c}</option>`).join("");
   const sibs = CONFIG.SIBLINGS.map(s => `<option value="${s}" ${s===tx.paidBy?"selected":""}>${s}</option>`).join("");
@@ -433,9 +432,10 @@ window.saveEdit = async (id, original) => {
       date,
       source: "manual",
     });
-    document.querySelector("div[style*='inset:0']")?.remove();
-    showToast("✓ Cambios guardados");
+    document.getElementById("edit-overlay")?.remove();
     loadTransactions();
+    setState({ tab: "movimientos" });
+    setTimeout(() => showToast("✓ Cambios guardados"), 100);
   } catch(e) { showToast("Error al guardar", true); }
 };
 
