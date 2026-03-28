@@ -325,6 +325,8 @@ async function submitExpense() {
       expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() },
     });
     showToast("✓ Gasto guardado");
+    // Clear AI result to show form is fresh
+    state.aiResult = null; state.aiText = "";
     loadTransactions();
   } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
 }
@@ -402,10 +404,11 @@ function editTransaction(id, txJson) {
         <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Pagado por</label>
         <select id="edit-paidby" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">${sibs}</select>
       </div>` : ""}
-      <button onclick="saveEdit('${id}',${JSON.stringify(tx).replace(/'/g,"\'")})" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;">Guardar cambios</button>
+      <button id="edit-save-btn" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;">Guardar cambios</button>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener("click", e => { if(e.target===overlay) overlay.remove(); });
+  document.getElementById("edit-save-btn").addEventListener("click", () => window.saveEdit(id, tx));
 }
 
 window.saveEdit = async (id, original) => {
