@@ -42,10 +42,10 @@
   .topbar-title span { color: var(--mother); font-style: italic; }
   .topbar-user { font-size: 0.75rem; color: var(--muted); text-align: right; }
   .topbar-user button { background: none; border: none; color: var(--muted); font-size: 0.7rem; cursor: pointer; text-decoration: underline; }
-  .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(var(--safe-bot) + 80px); min-height: 0; }
+  .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 80px); min-height: 0; }
 
   /* ── Bottom nav ── */
-  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0 max(env(safe-area-inset-bottom, 10px), 10px); background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; box-shadow: 0 100px 0 100px var(--surface); }
+  .bottom-nav { position: fixed; bottom: env(safe-area-inset-bottom, 0px); left: 0; right: 0; padding: 10px 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
   .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: var(--muted); font-size: 0.6rem; cursor: pointer; padding: 4px; transition: color .2s; }
   .nav-btn.active { color: var(--mother); }
   .nav-btn svg { width: 22px; height: 22px; }
@@ -549,6 +549,7 @@ function render() {
       ${renderTopbar()}
       <div class="content">${renderTab()}</div>
       ${renderBottomNav()}
+      <div style="position:fixed;bottom:0;left:0;right:0;height:env(safe-area-inset-bottom,0px);background:var(--surface);z-index:99;"></div>
     </div>
     <div id="toast" class="toast"></div>
     ${state.loading ? `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:998;gap:16px;">
