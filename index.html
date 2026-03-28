@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#1a1a2e"/>
+<link rel="apple-touch-icon" href="logo.png">
+<link rel="icon" type="image/png" href="logo.png">
+<title>Mama Fund</title>
+<meta name="robots" content="noindex, nofollow">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #22223b;
+    --border: rgba(255,255,255,0.08); --text: #f0ede8;
+    --muted: rgba(240,237,232,0.45); --income: #6ee7b7;
+    --expense: #fca5a5; --mother: #c4b5fd; --accent: #f59e0b;
+    --radius: 16px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bot: env(safe-area-inset-bottom, 0px);
+  }
+  html { height: -webkit-fill-available; }
+  body { height: 100%; height: 100dvh; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; overflow: hidden; }
+  #root { height: 100%; height: 100dvh; min-height: -webkit-fill-available; display: flex; flex-direction: column; }
+
+  /* ── Auth ── */
+  .auth-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; background: radial-gradient(ellipse 80% 60% at 50% 30%, rgba(196,181,253,0.12) 0%, transparent 70%); }
+  .auth-logo { font-family: 'DM Serif Display', serif; font-size: 3rem; color: var(--text); margin-bottom: 24px; }
+  .auth-logo span { color: var(--mother); font-style: italic; }
+  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px 24px; width: 100%; max-width: 360px; text-align: center; }
+  .auth-card p { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+
+  /* ── Layout ── */
+  .app { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { padding: calc(var(--safe-top) + 12px) 20px 12px; display: flex; align-items: center; justify-content: space-between; background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .topbar-title { font-family: 'DM Serif Display', serif; font-size: 1.3rem; display: flex; align-items: center; gap: 8px; }
+  .topbar-title span { color: var(--mother); font-style: italic; }
+  .topbar-user { font-size: 0.75rem; color: var(--muted); text-align: right; }
+  .topbar-user button { background: none; border: none; color: var(--muted); font-size: 0.7rem; cursor: pointer; text-decoration: underline; }
+  .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(var(--safe-bot) + 80px); min-height: 0; }
+
+  /* ── Bottom nav ── */
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0 max(env(safe-area-inset-bottom, 10px), 10px); background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; box-shadow: 0 100px 0 100px var(--surface); }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: var(--muted); font-size: 0.6rem; cursor: pointer; padding: 4px; transition: color .2s; }
+  .nav-btn.active { color: var(--mother); }
+  .nav-btn svg { width: 22px; height: 22px; }
+
+  /* ── Forms ── */
+  .form-screen { padding: 16px 16px 0; overflow-x: hidden; }
+  .form-screen h2 { font-family: 'DM Serif Display', serif; font-size: 1.35rem; margin-bottom: 14px; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; display: block; }
+  .form-control { width: 100%; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-family: inherit; font-size: 0.92rem; -webkit-appearance: none; appearance: none; }
+  .form-control:focus { outline: none; border-color: var(--mother); }
+  select.form-control option { background: var(--surface2); }
+  .btn-primary { width: 100%; background: var(--mother); color: #1a1a2e; border: none; border-radius: 12px; padding: 15px; font-family: inherit; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Segmented control ── */
+  .seg { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 3px; margin-bottom: 16px; gap: 2px; }
+  .seg-btn { flex: 1; padding: 8px 4px; text-align: center; border-radius: 8px; font-size: 0.75rem; cursor: pointer; color: var(--muted); border: none; background: none; font-family: inherit; transition: all .2s; line-height: 1.3; }
+  .seg-btn.active { background: var(--mother); color: #1a1a2e; font-weight: 600; }
+
+  /* ── Mini balance strip ── */
+  .mini-balance { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mini-bal-chip { flex: 1; text-align: center; padding: 10px 6px; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); }
+  .mini-bal-name { font-size: 0.65rem; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }
+  .mini-bal-val { font-family: 'DM Serif Display', serif; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 3px; }
+  .mini-bal-val.pos { color: var(--income); }
+  .mini-bal-val.neg { color: var(--expense); }
+  .mini-bal-val.zero { color: var(--muted); }
+
+  /* ── Transaction list ── */
+  .tx-list { padding: 0 16px; }
+  .tx-day { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; padding: 14px 0 6px; }
+  .tx-item { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .tx-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+  .tx-icon.expense        { background: rgba(252,165,165,.12); }
+  .tx-icon.mother_expense { background: rgba(252,165,165,.08); }
+  .tx-icon.income         { background: rgba(110,231,183,.12); }
+  .tx-icon.transfer       { background: rgba(196,181,253,.12); }
+  .tx-body { flex: 1; min-width: 0; }
+  .tx-desc { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tx-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .tx-amount { font-family: 'DM Serif Display', serif; font-size: 1.05rem; flex-shrink: 0; }
+  .tx-amount.expense        { color: var(--expense); }
+  .tx-amount.mother_expense { color: var(--expense); }
+  .tx-amount.income         { color: var(--income); }
+  .tx-amount.transfer       { color: var(--mother); }
+  .tx-del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1.1rem; }
+
+  /* ── Summary / Resumen ── */
+  .section { padding: 16px 16px 0; }
+  .section-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 10px; }
+  .month-selector { display: flex; align-items: center; gap: 12px; padding: 14px 16px 0; }
+  .month-selector select { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 6px 10px; font-family: inherit; font-size: 0.85rem; flex: 1; }
+  .month-selector select:focus { outline: none; border-color: var(--mother); }
+  .cards-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .card.wide { grid-column: span 2; }
+  .card-label { font-size: 0.68rem; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .08em; }
+  .card-value { font-family: 'DM Serif Display', serif; font-size: 1.5rem; line-height: 1; }
+  .card-value.income  { color: var(--income); }
+  .card-value.expense { color: var(--expense); }
+  .card-value.mother  { color: var(--mother); }
+
+  /* Sibling balance rows */
+  .sibling-balances { display: flex; flex-direction: column; gap: 8px; }
+  .sib-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--surface2); border-radius: 10px; }
+  .sib-name { font-size: 0.85rem; font-weight: 500; }
+  .sib-detail { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .sib-balance { font-family: 'DM Serif Display', serif; font-size: 1.1rem; }
+  .sib-balance.pos { color: var(--income); }
+  .sib-balance.neg { color: var(--expense); }
+
+  /* Category bars */
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-label { font-size: 0.8rem; color: var(--muted); width: 110px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { flex: 1; height: 8px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 99px; transition: width .5s ease; }
+  .bar-amount { font-size: 0.78rem; color: var(--text); width: 80px; text-align: right; flex-shrink: 0; }
+
+  /* Donut chart area */
+  .chart-wrap { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
+  .chart-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .toast { position: fixed; top: calc(var(--safe-top) + 16px); left: 50%; transform: translateX(-50%); background: var(--income); color: #0f1a0f; padding: 10px 20px; border-radius: 99px; font-size: 0.85rem; font-weight: 600; z-index: 999; pointer-events: none; opacity: 0; transition: opacity .3s; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: var(--expense); color: #1a0f0f; }
+  .spinner { width: 18px; height: 18px; border: 2px solid rgba(196,181,253,.3); border-top-color: var(--mother); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 0.88rem; }
+  #ai-text:focus { outline: none; border-color: var(--mother); }
+  /* Filter chips */
+  .filter-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 99px; padding: 5px 12px; font-size: 0.75rem; color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+  .filter-chip.active { background: var(--mother); color: #1a1a2e; border-color: var(--mother); font-weight: 600; }
+  /* Date input — force visible on Safari iOS */
+  input[type="date"].date-input { color: var(--text); -webkit-appearance: none; appearance: none; }
+  input[type="date"].date-input::-webkit-date-and-time-value { text-align: left; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+
+// ════════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════════
+const CONFIG = {
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxT0O32r7miv08TyBgi3cA71s6Wbr9-UmanR990hWU0KLTiNElh1YlXs5iUDjBN-40sEQ/exec",
+  GOOGLE_CLIENT_ID: "434284641729-ujfijla3m0f0n59bhanfec9vmcc5nd7a.apps.googleusercontent.com",
+  SIBLINGS: ["Fede", "Mery", "Vero"],
+  INCOME_SOURCES: ["Jubilación", "Alquiler", "Aporte Fede", "Aporte Vero", "Aporte Mery", "Otros"],
+  CATEGORIES: ["🛒 Supermercado", "💡 Servicios", "🍽️ Salidas", "🏥 Médico", "💰 Otros"],
+  PAYMENT_METHODS: ["Cuenta", "Tarjeta", "Débito"],
+  CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
+};
+
+function today() {
+  const d = new Date();
+  const offset = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - offset * 60000);
+  return local.toISOString().slice(0,10);
+}
+function catShort(c) { return c.replace(/^[^\s]+\s/,""); } // strip emoji prefix for display
+
+// ── State ─────────────────────────────────────────────
+let state = {
+  user: null, idToken: null,
+  tab: "gastos",
+  transactions: [],      // all transactions, unfiltered
+  loading: false,
+  selectedMonth: new Date().toISOString().slice(0,7),
+  historialFilter: "all",
+  categoryFilter: "all",
+  resumenFilter: new Date().toISOString().slice(0,7), // default = current month
+  // Expense form — subtype: "expense" | "mother_expense"
+  expForm: {
+    subtype: "expense",
+    amount: "", description: "", category: CONFIG.CATEGORIES[0],
+    paidBy: "", paymentMethod: "Cuenta", date: today(),
+  },
+  // Income/transfer form — subtype: "transfer" | "income"
+  aiText: "",
+  aiLoading: false,
+  aiResult: null,
+  incForm: {
+    subtype: "transfer",
+    amount: "", description: "",
+    source: "Jubilación",
+    from: "Mamá",   // transfer sender: "Mamá" or a sibling name
+    recipient: "",  // transfer receiver
+    date: today(),
+  },
+};
+
+function setState(patch) { Object.assign(state, patch); render(); }
+
+// ── API ───────────────────────────────────────────────
+async function api(action, params={}) {
+  const token = state.idToken;
+  // Use GET for everything to avoid CORS preflight issues with Apps Script
+  // Do NOT send month filter — load all transactions, filter client-side
+  const q = new URLSearchParams({ action, token, ...params });
+  const r = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${q}`, { redirect: "follow" });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error);
+  return d.data;
+}
+
+async function loadTransactions() {
+  if (!state.user) return;
+  setState({ loading: true });
+  try {
+    const data = await api("transactions");
+    console.log("loadTransactions — month:", state.selectedMonth, "rows returned:", data.length, "data:", JSON.stringify(data).slice(0,300));
+    const sorted = data.sort((a,b) => {
+      const da = (a.date || a.timestamp || "").slice(0,10);
+      const db = (b.date || b.timestamp || "").slice(0,10);
+      return db.localeCompare(da);
+    });
+    setState({ transactions: sorted, loading: false });
+  } catch(e) {
+    console.error("loadTransactions error:", e);
+    showToast("Error cargando datos", true);
+    setState({ loading: false });
+  }
+}
+
+// ── AI parser — calls Apps Script proxy (key stays server-side) ──
+async function parseWithGemini(text) {
+  setState({ aiLoading: true, aiResult: null });
+  try {
+    const q = new URLSearchParams({ action: "parseWithAI", token: state.idToken, text: encodeURIComponent(text) });
+    const r = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${q}`, { redirect: "follow" });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    const parsed = d.data;
+
+    if (parsed.type === "expense" || parsed.type === "mother_expense") {
+      const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
+      setState({
+        aiLoading: false, aiResult: parsed,
+        tab: "gastos",
+        expForm: {
+          ...state.expForm,
+          subtype: parsed.type,
+          amount: parsed.amount ? String(parsed.amount) : "",
+          description: parsed.description || "",
+          category: cat,
+          paidBy: parsed.paidBy || state.expForm.paidBy,
+          paymentMethod: parsed.paymentMethod || "Cuenta",
+          date: parsed.date || today(),
+        }
+      });
+    } else {
+      setState({
+        aiLoading: false, aiResult: parsed,
+        tab: "ingresos",
+        incForm: {
+          ...state.incForm,
+          subtype: parsed.type || "transfer",
+          amount: parsed.amount ? String(parsed.amount) : "",
+          description: parsed.description || "",
+          source: parsed.source || state.incForm.source,
+          recipient: parsed.recipient || "",
+          from: parsed.type === "transfer" ? "Mamá" : state.incForm.from,
+          date: parsed.date || today(),
+        }
+      });
+    }
+  } catch(e) {
+    console.error("AI error:", e);
+    setState({ aiLoading: false, aiResult: { interpretation: "No pude entender el texto. Completá el formulario manualmente.", confidence: "low" } });
+  }
+}
+
+// ── Submit expense ─────────────────────────────────────
+async function submitExpense() {
+  const f = state.expForm;
+  if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
+  if (f.subtype === "expense" && !f.paidBy) { showToast("Seleccioná quién pagó", true); return; }
+  setState({ loading: true });
+  try {
+    await api("addTransaction", {
+      type: f.subtype,
+      amount: parseFloat(f.amount),
+      description: f.description || catShort(f.category),
+      category: catShort(f.category),
+      paidBy: f.subtype === "expense" ? f.paidBy : "",
+      paymentMethod: f.subtype === "mother_expense" ? f.paymentMethod : "",
+      recipient: "",
+      date: f.date,
+      source: "manual",
+    });
+    const defaultPaidBy = matchSibling(state.user?.firstName);
+    setState({
+      loading: false,
+      expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() },
+    });
+    showToast("Gasto guardado ✓");
+    loadTransactions();
+  } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
+}
+
+// ── Submit income / transfer ───────────────────────────
+async function submitIncome() {
+  const f = state.incForm;
+  if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
+  if (f.subtype === "transfer" && !f.recipient) { showToast("Seleccioná el destinatario", true); return; }
+  setState({ loading: true });
+  try {
+    const desc = f.description ||
+      (f.subtype === "transfer" ? `Transferencia de ${f.from} a ${f.recipient}` : f.source);
+    await api("addTransaction", {
+      type: f.subtype,
+      amount: parseFloat(f.amount),
+      description: desc,
+      category: "",
+      paidBy: f.subtype === "transfer" ? f.from : "",
+      recipient: f.subtype === "transfer" ? f.recipient : "",
+      source_type: f.source || "",
+      date: f.date,
+      source: "manual",
+    });
+    setState({
+      loading: false,
+      aiText: "",
+  aiLoading: false,
+  aiResult: null,
+  incForm: { ...f, amount: "", description: "", date: today() },
+    });
+    showToast("Registrado ✓");
+    loadTransactions();
+  } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
+}
+
+async function deleteTransaction(id) {
+  if (!confirm("¿Eliminar esta transacción?")) return;
+  try { await api("deleteTransaction", { id }); showToast("Eliminado"); loadTransactions(); }
+  catch(e) { showToast("Error al eliminar", true); }
+}
+
+// ── Computed balances ──────────────────────────────────
+function computeBalances(txs) {
+  txs = txs || state.transactions;
+
+  // Per-sibling operational balance (plata de mamá que tienen en mano)
+  const sib = {};
+  CONFIG.SIBLINGS.forEach(s => sib[s] = { received: 0, spent: 0, aportes: 0 });
+
+  // Mamá account
+  let mamaIngresos = 0;   // ingresos que fueron a mamá
+  let mamaGastos   = 0;   // gastos directos de su cuenta
+
+  // System totals
+  let totalIngresos  = 0;  // ALL income regardless of destination
+  let totalGastos    = 0;  // ALL expenses (hermanos + mamá)
+  let totalTransfers = 0;  // ALL transfers from mamá to hermanos
+
+  txs.forEach(t => {
+    const amt = parseFloat(t.amount || 0);
+
+    if (t.type === "income") {
+      totalIngresos += amt;
+      // Where did it go?
+      if (t.recipient && sib[t.recipient] !== undefined) {
+        // Income deposited directly to a sibling (e.g. aporte goes to Mery)
+        sib[t.recipient].received += amt;
+      } else {
+        // Goes to mamá's account
+        mamaIngresos += amt;
+      }
+      // Track aportes per sibling (source_type starts with "Aporte")
+      if ((t.source_type || t.description || "").startsWith("Aporte")) {
+        const src = t.source_type || "";
+        CONFIG.SIBLINGS.forEach(s => {
+          if (src.includes(s) && sib[s]) sib[s].aportes += amt;
+        });
+      }
+    }
+
+    if (t.type === "transfer") {
+      // Mamá moves money to a sibling — sibling gets operational balance
+      totalTransfers += amt;
+      if (t.recipient && sib[t.recipient] !== undefined) {
+        sib[t.recipient].received += amt;
+      }
+    }
+
+    if (t.type === "expense") {
+      totalGastos += amt;
+      if (t.paidBy && sib[t.paidBy] !== undefined) {
+        sib[t.paidBy].spent += amt;
+      }
+    }
+
+    if (t.type === "mother_expense") {
+      totalGastos += amt;
+      mamaGastos += amt;
+    }
+  });
+
+  // Saldo cuenta mamá = lo que entró a su cuenta − gastos directos − transferencias enviadas
+  const mamaBalance = mamaIngresos - mamaGastos - totalTransfers;
+
+  // Saldo total mamá = todos los ingresos − todos los gastos (incl. lo que tienen hermanos)
+  const systemBalance = totalIngresos - totalGastos;
+
+  return { sib, mamaIngresos, mamaGastos, mamaBalance, totalIngresos, totalGastos, systemBalance, totalTransfers };
+}
+
+// sorted siblings by net balance descending
+function sortedBalances(txs) {
+  const { sib } = computeBalances(txs);
+  return CONFIG.SIBLINGS
+    .map(s => ({ name: s, received: sib[s].received, spent: sib[s].spent, aportes: sib[s].aportes, net: sib[s].received - sib[s].spent }))
+    .sort((a,b) => b.net - a.net);
+}
+
+// ── Google Sign-In ─────────────────────────────────────
+function initGoogleSignIn() {
+  window.google.accounts.id.initialize({
+    client_id: CONFIG.GOOGLE_CLIENT_ID,
+    callback: (response) => {
+      const payload = parseJwt(response.credential);
+      const firstName = payload.name?.split(" ")[0] || payload.name;
+      const matched = matchSibling(firstName);
+      setState({
+        user: { name: payload.name, firstName, email: payload.email },
+        idToken: response.credential,
+        expForm: { ...state.expForm, paidBy: matched },
+      });
+      loadTransactions();
+    },
+    auto_select: true,
+  });
+  window.google.accounts.id.renderButton(document.getElementById("g-signin-btn"), {
+    theme: "filled_black", size: "large", shape: "pill", text: "signin_with",
+  });
+  window.google.accounts.id.prompt();
+}
+
+function matchSibling(firstName) {
+  return CONFIG.SIBLINGS.find(s => s.toLowerCase() === (firstName||"").toLowerCase()) || CONFIG.SIBLINGS[0];
+}
+function parseJwt(token) {
+  return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+}
+
+// ── Toast ──────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, isError=false) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "toast show" + (isError?" error":"");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = "toast"; }, 2500);
+}
+
+// ── Formatters ─────────────────────────────────────────
+function formatDateDisplay(iso) {
+  if (!iso) return "Seleccionar fecha";
+  const [y,m,d] = iso.split("-");
+  const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
+}
+
+// Filter transactions client-side
+function filterTxs(txs, filter) {
+  if (!filter || filter === "all") return txs;
+  const now = new Date();
+  const thisYear = now.getFullYear().toString();
+  return txs.filter(t => {
+    const d = (t.date || t.timestamp || "").slice(0,10);
+    if (filter === "ytd") return d.slice(0,4) === thisYear && d <= today();
+    if (filter.length === 4) return d.slice(0,4) === filter; // year filter
+    return d.slice(0,7) === filter; // month filter
+  });
+}
+
+function getYears() {
+  const years = new Set(state.transactions.map(t => (t.date||t.timestamp||"").slice(0,4)).filter(Boolean));
+  return [...years].sort((a,b)=>b.localeCompare(a));
+}
+
+function txIcon(t) {
+  if (t.type === "expense") {
+    const cat = t.category || "";
+    if (cat.includes("Supermercado")) return "🛒";
+    if (cat.includes("Servicios"))    return "💡";
+    if (cat.includes("Salidas"))      return "🍽️";
+    if (cat.includes("Médico"))       return "🏥";
+    return "📦";
+  }
+  if (t.type === "mother_expense") {
+    const pm = (t.paymentMethod || "").toLowerCase();
+    if (pm === "tarjeta") return "💳";
+    return "🏦";
+  }
+  if (t.type === "transfer") return "📤";
+  if (t.type === "income") {
+    const src = (t.source_type || t.description || "").toLowerCase();
+    if (src.includes("jubilación") || src.includes("jubilacion")) return "💵";
+    if (src.includes("alquiler"))  return "🏠";
+    if (src.includes("aporte"))    return "🤝";
+    return "💶";
+  }
+  return "💰";
+}
+
+const fmt = n => new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n);
+const typeEmoji = { income:"💚", expense:"🔴", transfer:"💜", mother_expense:"🟣" };
+const typeLabel = { income:"Ingreso", expense:"Gasto", transfer:"Transferencia", mother_expense:"Gasto mamá" };
+
+function formatDay(iso) {
+  const d = new Date(iso+"T12:00:00");
+  return d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+}
+function fmtDateDisplay(iso) {
+  if (!iso) return "";
+  const d = new Date(iso+"T12:00:00");
+  return d.toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"});
+}
+function getLast12Months() {
+  const months=[], d=new Date();
+  for(let i=0;i<12;i++) months.push(new Date(d.getFullYear(),d.getMonth()-i,1).toISOString().slice(0,7));
+  return months;
+}
+function formatMonth(m) {
+  const [y,mo]=m.split("-");
+  return new Date(parseInt(y),parseInt(mo)-1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+}
+
+// ── Render ─────────────────────────────────────────────
+function render() {
+  const root = document.getElementById("root");
+  if (!state.user) { root.innerHTML = renderAuth(); scheduleGoogleInit(); return; }
+  root.innerHTML = `
+    <div class="app">
+      ${renderTopbar()}
+      <div class="content">${renderTab()}</div>
+      ${renderBottomNav()}
+    </div>
+    <div id="toast" class="toast"></div>
+    ${state.loading ? `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:998;gap:16px;">
+      <div class="spinner" style="width:36px;height:36px;border-width:3px;"></div>
+      <div style="color:var(--muted);font-size:0.85rem;">Guardando...</div>
+    </div>` : ""}`;
+  attachEvents();
+}
+
+function scheduleGoogleInit() {
+  if (window.google?.accounts?.id) initGoogleSignIn();
+  else setTimeout(scheduleGoogleInit, 300);
+}
+
+function renderAuth() {
+  return `
+    <div class="auth-screen">
+      <img src="logo.png" style="width:100px;height:100px;margin-bottom:16px;border-radius:16px;" alt="Mama Fund">
+      <div class="auth-logo">Mama<span>Fund</span></div>
+      <div class="auth-card">
+        <p>Iniciá sesión con tu cuenta</p>
+        <div id="g-signin-btn" style="display:flex;justify-content:center;margin-top:8px;"></div>
+      </div>
+    </div>
+    <div id="toast" class="toast"></div>`;
+}
+
+function renderTopbar() {
+  return `
+    <div class="topbar">
+      <div class="topbar-title">
+        <img src="logo.png" style="width:32px;height:32px;border-radius:8px;">
+        Mama<span>Fund</span>
+      </div>
+      <div class="topbar-user">
+        ${state.user.firstName}<br>
+        <button onclick="signOut()">Salir</button>
+      </div>
+    </div>`;
+}
+
+function renderBottomNav() {
+  const tabs = [
+    { id:"gastos",      label:"Gastos",      svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>` },
+    { id:"ingresos",    label:"Ingresos",    svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M5 12l7-7 7 7"/></svg>` },
+    { id:"movimientos", label:"Historial",   svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>` },
+    { id:"resumen",     label:"Resumen",     svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>` },
+  ];
+  return `<nav class="bottom-nav">${tabs.map(t=>`<button class="nav-btn${state.tab===t.id?" active":""}" data-tab="${t.id}">${t.svg}<span>${t.label}</span></button>`).join("")}</nav>`;
+}
+
+function renderTab() {
+  if (state.tab==="gastos")      return renderGastos();
+  if (state.tab==="ingresos")    return renderIngresos();
+  if (state.tab==="movimientos") return renderMovimientos();
+  if (state.tab==="resumen")     return renderResumen();
+  return "";
+}
+
+// ── Mini balances (always sorted) ─────────────────────
+function renderMiniBalances() {
+  const sorted = sortedBalances();
+  return `<div class="mini-balance">
+    ${sorted.map(s=>`
+      <div class="mini-bal-chip">
+        <div class="mini-bal-name">${s.name}</div>
+        <div class="mini-bal-val ${s.net>0?"pos":s.net<0?"neg":"zero"}">${fmt(s.net)}</div>
+      </div>`).join("")}
+  </div>`;
+}
+
+// ── AI input box ──────────────────────────────────────
+function renderAIBox() {
+  const ar = state.aiResult;
+  return `
+    <div style="background:var(--surface2);border:1px solid rgba(196,181,253,0.2);border-radius:12px;padding:12px;margin-bottom:14px;">
+      <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mother);margin-bottom:8px;">✨ Entrada con IA</div>
+      <div style="display:flex;gap:8px;">
+        <input id="ai-text" type="text" placeholder='Ej: "Pagué $15000 de luz con la tarjeta de mamá"'
+          style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:0.85rem;"
+          value="${state.aiText}" onkeydown="if(event.key==='Enter')sendAI()">
+        <button onclick="sendAI()" ${state.aiLoading?"disabled":""} style="background:var(--mother);color:#1a1a2e;border:none;border-radius:10px;padding:9px 12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:42px;height:42px;">
+          ${state.aiLoading
+            ? '<div class="spinner" style="width:16px;height:16px;border-width:2px;border-top-color:#1a1a2e;border-color:rgba(26,26,46,0.3);"></div>'
+            : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="#1a1a2e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="#1a1a2e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'}
+        </button>
+      </div>
+      ${ar ? `<div style="margin-top:8px;font-size:0.78rem;color:${ar.confidence==="high"?"var(--income)":"var(--accent)"};">
+        ${ar.confidence==="high"?"✅":"⚠️"} ${ar.interpretation}
+      </div>` : ""}
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════
+// GASTOS TAB
+// ════════════════════════════════════════════════════
+function renderGastos() {
+  const f = state.expForm;
+  const isMother = f.subtype === "mother_expense";
+  return `
+    <div class="form-screen">
+      ${renderMiniBalances()}
+      ${renderAIBox()}
+      <h2 style="margin-bottom:14px;">Registrar gasto</h2>
+      <div class="seg">
+        <button class="seg-btn${!isMother?" active":""}" data-subtype="expense" data-form="exp">Hermanos</button>
+        <button class="seg-btn${isMother?" active":""}" data-subtype="mother_expense" data-form="exp">Mamá</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Fecha</label>
+          <input class="form-control date-input" id="ef-date" type="date" value="${f.date}">
+          <div class="date-label" style="font-size:0.75rem;color:var(--mother);margin-top:4px;">${fmtDateDisplay(f.date)}</div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Monto (ARS $)</label>
+          <input class="form-control" id="ef-amount" type="number" inputmode="decimal" placeholder="0" value="${f.amount}">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Categoría</label>
+          <select class="form-control" id="ef-cat">
+            ${CONFIG.CATEGORIES.map(c=>`<option value="${c}" ${f.category===c?"selected":""}>${c}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Descripción (opcional)</label>
+          <input class="form-control" id="ef-desc" type="text" placeholder="¿En qué?" value="${f.description||""}">
+        </div>
+      </div>
+      ${isMother ? `
+      <div class="form-group" style="margin-top:10px;">
+        <label class="form-label">Medio de pago</label>
+        <select class="form-control" id="ef-payment">
+          ${CONFIG.PAYMENT_METHODS.map(m=>`<option value="${m}" ${f.paymentMethod===m?"selected":""}>${m}</option>`).join("")}
+        </select>
+      </div>` : `
+      <div class="form-group" style="margin-top:10px;">
+        <label class="form-label">Pagado por</label>
+        <select class="form-control" id="ef-paidby">
+          ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.paidBy===s?"selected":""}>${s}</option>`).join("")}
+        </select>
+      </div>`}
+      <button class="btn-primary" ${state.loading?"disabled":""} onclick="submitExpense()">
+        ${state.loading?`<div class="spinner" style="margin:auto"></div>`:"Guardar gasto"}
+      </button>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════
+// INGRESOS TAB
+// ════════════════════════════════════════════════════
+function renderIngresos() {
+  const f = state.incForm;
+  const isTransfer = f.subtype === "transfer";
+  const senders = ["Mamá", ...CONFIG.SIBLINGS];
+  return `
+    <div class="form-screen">
+      ${renderMiniBalances()}
+      ${renderAIBox()}
+      <h2 style="margin-bottom:14px;">Ingresos y transferencias</h2>
+      <div class="seg">
+        <button class="seg-btn${isTransfer?" active":""}" data-subtype="transfer" data-form="inc">Transferencia</button>
+        <button class="seg-btn${!isTransfer?" active":""}" data-subtype="income" data-form="inc">Ingreso</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Fecha</label>
+          <input class="form-control date-input" id="if-date" type="date" value="${f.date}">
+          <div class="date-label" style="font-size:0.75rem;color:var(--mother);margin-top:4px;">${fmtDateDisplay(f.date)}</div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Monto (ARS $)</label>
+          <input class="form-control" id="if-amount" type="number" inputmode="decimal" placeholder="0" value="${f.amount}">
+        </div>
+      </div>
+      ${isTransfer ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">De</label>
+          <select class="form-control" id="if-from">
+            ${senders.map(s=>`<option value="${s}" ${f.from===s?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Para</label>
+          <select class="form-control" id="if-recipient">
+            <option value="">— Seleccionar —</option>
+            ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+      </div>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Fuente</label>
+          <select class="form-control" id="if-source">
+            ${CONFIG.INCOME_SOURCES.map(s=>{
+              const icon = s.includes("Jubilación")?"💵":s.includes("Alquiler")?"🏠":s.includes("Aporte")?"🤝":"💶";
+              return `<option value="${s}" ${f.source===s?"selected":""}>${icon} ${s}</option>`;
+            }).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Ingresó a</label>
+          <select class="form-control" id="if-recipient">
+            <option value="Mamá" ${(f.recipient==="Mamá"||!f.recipient)?"selected":""}>Mamá</option>
+            ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+      </div>`}
+      <div class="form-group" style="margin-top:10px;">
+        <label class="form-label">Descripción (opcional)</label>
+        <input class="form-control" id="if-desc" type="text" placeholder="Detalle..." value="${f.description||""}">
+      </div>
+      <button class="btn-primary" ${state.loading?"disabled":""} onclick="submitIncome()">
+        ${state.loading?`<div class="spinner" style="margin:auto"></div>`:"Guardar"}
+      </button>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════
+// HISTORIAL TAB
+// ════════════════════════════════════════════════════
+function renderFilterBar(filterKey, onChange, showCategory=false) {
+  const f = state[filterKey];
+  const years = getYears();
+  const months = getLast12Months();
+  const periodOptions = [
+    { val:"all", label:"Todo" },
+    { val:"ytd", label:"YTD" },
+    ...years.map(y=>({ val:y, label:y })),
+    ...months.map(m=>({ val:m, label:formatMonth(m) })),
+  ];
+  return `
+    <div style="padding:12px 16px 0;display:flex;gap:8px;">
+      <select onchange="${onChange}(this.value)" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
+        ${periodOptions.map(o=>`<option value="${o.val}" ${f===o.val?"selected":""}>${o.label}</option>`).join("")}
+      </select>
+      ${showCategory ? `
+      <select onchange="setCategoryFilter(this.value)" style="flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
+        <option value="all" ${state.categoryFilter==="all"?"selected":""}>Todas las categorías</option>
+        ${CONFIG.CATEGORIES.map(c=>`<option value="${c.replace(/^[^\s]+\s/,"")}" ${state.categoryFilter===c.replace(/^[^\s]+\s/,"")?"selected":""}>${c}</option>`).join("")}
+      </select>` : ""}
+    </div>`;
+}
+
+function renderMovimientos() {
+  // Saldo always uses ALL transactions (real-time balance)
+  const allBal = sortedBalances();
+
+  // Filtered transactions for the list
+  let txs = filterTxs(state.transactions, state.historialFilter);
+  if (state.categoryFilter !== "all") {
+    txs = txs.filter(t => (t.category||"") === state.categoryFilter);
+  }
+
+  const balSection = "";
+
+  const filterBar = renderFilterBar("historialFilter", "setHistorialFilter", true);
+
+  if (state.loading) return balSection + filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
+
+  // Limit to 20 most recent when "all" with no filter
+  const displayTxs = (state.historialFilter === "all") ? txs.slice(0, 20) : txs;
+  const hasMore = (state.historialFilter === "all") && txs.length > 20;
+
+  if (!displayTxs.length) return balSection + filterBar + `<div class="empty" style="margin-top:24px;">Sin movimientos</div>`;
+
+  const grouped = {};
+  displayTxs.forEach(t => {
+    const day = (t.date || t.timestamp || "").slice(0,10) || "?";
+    if (!grouped[day]) grouped[day] = [];
+    grouped[day].push(t);
+  });
+  const sortedDays = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+
+  return balSection + filterBar + `
+    <div class="tx-list">
+      ${sortedDays.map(day=>`
+        <div class="tx-day">${formatDay(day)}</div>
+        ${grouped[day].map(t=>`
+          <div class="tx-item">
+            <div class="tx-icon ${t.type}">${txIcon(t)}</div>
+            <div class="tx-body">
+              <div class="tx-desc">${t.description||typeLabel[t.type]||t.type}</div>
+              <div class="tx-meta">
+                ${typeLabel[t.type]||t.type}
+                ${t.paidBy?" · "+t.paidBy:""}
+                ${t.recipient?" → "+t.recipient:""}
+                ${t.category?" · "+t.category:""}
+                ${t.paymentMethod?" · "+t.paymentMethod:""}
+              </div>
+            </div>
+            <div class="tx-amount ${t.type}">${fmt(parseFloat(t.amount||0))}</div>
+            <button class="tx-del" data-del="${t.id}">×</button>
+          </div>`).join("")}
+      `).join("")}
+      ${hasMore ? `<div style="text-align:center;padding:16px;color:var(--muted);font-size:0.8rem;">Mostrando los últimos 20 movimientos. Usá los filtros para ver más.</div>` : ""}
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════
+// RESUMEN TAB
+// ════════════════════════════════════════════════════
+function renderResumen() {
+  const filterBar = renderFilterBar("resumenFilter", "setResumenFilter");
+  const txs    = filterTxs(state.transactions, state.resumenFilter);
+  const allTxs = state.transactions; // always use ALL for current balances
+
+  const { sib, mamaIngresos, mamaGastos, mamaBalance, totalIngresos, totalGastos, systemBalance } = computeBalances(txs);
+  const allBal = sortedBalances(allTxs); // real-time balances always from all txs
+  const rt = computeBalances(allTxs);    // real-time totals for estado actual
+
+  // Filtered period stats
+  const totalTransfers = txs.filter(t=>t.type==="transfer").reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  const totalExpHermanos = txs.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
+
+  // Category breakdown
+  const byCat = {};
+  txs.filter(t=>t.type==="expense"||t.type==="mother_expense").forEach(t=>{
+    const cat = t.category || "Otros";
+    byCat[cat] = (byCat[cat]||0) + parseFloat(t.amount||0);
+  });
+  const catEntries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const catMax = Math.max(...Object.values(byCat),1);
+  const totalAllExp = totalExpHermanos + txs.filter(t=>t.type==="mother_expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
+
+  // Spending by sibling (filtered period)
+  const bySibSpent = {};
+  CONFIG.SIBLINGS.forEach(s=>bySibSpent[s]=0);
+  txs.filter(t=>t.type==="expense").forEach(t=>{
+    if (t.paidBy && bySibSpent[t.paidBy]!==undefined) bySibSpent[t.paidBy]+=parseFloat(t.amount||0);
+  });
+  const sibSpentMax = Math.max(...Object.values(bySibSpent),1);
+
+  // Aportes per sibling (filtered period)
+  const aportesEntries = CONFIG.SIBLINGS
+    .map(s=>({ name:s, val: sib[s]?.aportes||0 }))
+    .filter(x=>x.val>0)
+    .sort((a,b)=>b.val-a.val);
+  const aportesMax = Math.max(...aportesEntries.map(x=>x.val),1);
+
+  const donut = buildDonut(catEntries, totalAllExp);
+
+  const filterLabel = state.resumenFilter==="all" ? "acumulado total"
+    : state.resumenFilter==="ytd" ? "año en curso"
+    : state.resumenFilter.length===4 ? `año ${state.resumenFilter}`
+    : formatMonth(state.resumenFilter);
+
+  return `
+    <div class="section" style="padding-top:14px;">
+      <div class="section-label">Estado actual ${state.loading?`<div class='spinner' style='display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;'></div>`:""}</div>
+      <div class="cards-row">
+        <div class="card wide" style="background:rgba(196,181,253,0.06);border-color:rgba(196,181,253,0.2);">
+          <div class="card-label">💰 Saldo total mamá</div>
+          <div class="card-value ${rt.systemBalance>=0?"income":"expense"}" style="font-size:1.8rem;">${fmt(rt.systemBalance)}</div>
+          <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">Todos los ingresos − todos los gastos</div>
+        </div>
+        <div class="card">
+          <div class="card-label">🏦 Saldo cuenta mamá</div>
+          <div class="card-value ${rt.mamaBalance>=0?"mother":"expense"}">${fmt(rt.mamaBalance)}</div>
+          <div style="font-size:0.68rem;color:var(--muted);margin-top:4px;">En su cuenta bancaria</div>
+        </div>
+        <div class="card">
+          <div class="card-label">👥 En manos hermanos</div>
+          <div class="card-value income">${fmt(allBal.reduce((s,x)=>s+x.net,0))}</div>
+          <div style="font-size:0.68rem;color:var(--muted);margin-top:4px;">Suma de saldos operativos</div>
+        </div>
+      </div>
+    </div>
+
+    ${filterBar}
+
+    <div class="section" style="margin-top:12px;">
+      <div class="section-label">Flujo — ${filterLabel}</div>
+      <div class="cards-row">
+        <div class="card"><div class="card-label">Total ingresos</div><div class="card-value income">${fmt(totalIngresos)}</div></div>
+        <div class="card"><div class="card-label">Total transferido</div><div class="card-value mother">${fmt(totalTransfers)}</div></div>
+        <div class="card"><div class="card-label">Total gastos</div><div class="card-value expense">${fmt(totalGastos)}</div></div>
+        <div class="card"><div class="card-label">Gastos hermanos</div><div class="card-value expense">${fmt(totalExpHermanos)}</div></div>
+        <div class="card"><div class="card-label">Saldo cuenta mamá</div><div class="card-value ${mamaBalance>=0?"mother":"expense"}">${fmt(mamaBalance)}</div></div>
+        <div class="card"><div class="card-label">Balance hermanos</div><div class="card-value ${(totalTransfers-totalExpHermanos)>=0?"income":"expense"}">${fmt(totalTransfers-totalExpHermanos)}</div></div>
+      </div>
+    </div>
+
+    ${catEntries.length ? `
+    <div class="section" style="margin-top:16px;">
+      <div class="section-label">Gastos por categoría</div>
+      <div class="card wide">
+        <div class="chart-wrap">
+          ${donut}
+          <div class="chart-legend">
+            ${catEntries.map(([cat,amt],i)=>`
+              <div class="legend-item">
+                <div class="legend-dot" style="background:${CONFIG.CAT_COLORS[i%CONFIG.CAT_COLORS.length]}"></div>
+                <span style="color:var(--muted)">${cat}</span>
+                <span style="margin-left:auto;font-weight:600;">${Math.round(amt/totalAllExp*100)}%</span>
+              </div>`).join("")}
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          ${catEntries.map(([cat,amt],i)=>`
+            <div class="bar-row">
+              <div class="bar-label">${cat}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${Math.round(amt/catMax*100)}%;background:${CONFIG.CAT_COLORS[i%CONFIG.CAT_COLORS.length]}"></div></div>
+              <div class="bar-amount">${fmt(amt)}</div>
+            </div>`).join("")}
+        </div>
+      </div>
+    </div>` : ""}
+
+    ${Object.values(bySibSpent).some(v=>v>0) ? `
+    <div class="section" style="margin-top:16px;">
+      <div class="section-label">Gastos por hermano</div>
+      <div class="card wide">
+        ${CONFIG.SIBLINGS.filter(s=>bySibSpent[s]>0).sort((a,b)=>bySibSpent[b]-bySibSpent[a]).map(s=>`
+          <div class="bar-row">
+            <div class="bar-label">👤 ${s}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(bySibSpent[s]/sibSpentMax*100)}%;background:var(--expense)"></div></div>
+            <div class="bar-amount">${fmt(bySibSpent[s])}</div>
+          </div>`).join("")}
+      </div>
+    </div>` : ""}
+
+    ${aportesEntries.length ? `
+    <div class="section" style="margin-top:16px;">
+      <div class="section-label">Aportes por hermano</div>
+      <div class="card wide">
+        ${aportesEntries.map((x,i)=>`
+          <div class="bar-row">
+            <div class="bar-label">👤 ${x.name}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(x.val/aportesMax*100)}%;background:var(--income)"></div></div>
+            <div class="bar-amount">${fmt(x.val)}</div>
+          </div>`).join("")}
+      </div>
+    </div>` : ""}
+
+    <div class="section" style="margin-top:16px;padding-bottom:8px;">
+      <div class="section-label">Saldo operativo por hermano (plata de mamá en mano)</div>
+      <div class="sibling-balances">
+        ${allBal.map(s=>`
+          <div class="sib-row">
+            <div>
+              <div class="sib-name">👤 ${s.name}</div>
+              <div class="sib-detail">Recibió ${fmt(s.received)} · Gastó ${fmt(s.spent)}${s.aportes>0?` · Aportó ${fmt(s.aportes)}`:""}</div>
+            </div>
+            <div class="sib-balance ${s.net>=0?"pos":"neg"}">${fmt(s.net)}</div>
+          </div>`).join("")}
+      </div>
+    </div>`;
+}
+// ── SVG donut chart ────────────────────────────────────
+function buildDonut(entries, total) {
+  if (!total) return "";
+  const r = 40, cx = 50, cy = 50, stroke = 14;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  const slices = entries.map(([cat,amt],i) => {
+    const pct = amt / total;
+    const dash = pct * circ;
+    const gap  = circ - dash;
+    const s = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+      stroke="${CONFIG.CAT_COLORS[i%CONFIG.CAT_COLORS.length]}"
+      stroke-width="${stroke}"
+      stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}"
+      stroke-dashoffset="${(-offset * circ).toFixed(2)}"
+      transform="rotate(-90 ${cx} ${cy})"/>`;
+    offset += pct;
+    return s;
+  }).join("");
+  return `<svg viewBox="0 0 100 100" width="100" height="100" style="flex-shrink:0;">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="${stroke}"/>
+    ${slices}
+    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle"
+      style="fill:var(--text);font-size:9px;font-family:'DM Sans',sans-serif;">${fmt(total)}</text>
+  </svg>`;
+}
+
+// ── Events ─────────────────────────────────────────────
+function attachEvents() {
+  document.querySelectorAll("[data-tab]").forEach(btn =>
+    btn.addEventListener("click", () => setState({ tab: btn.dataset.tab }))
+  );
+  document.querySelectorAll("[data-subtype][data-form='exp']").forEach(btn =>
+    btn.addEventListener("click", () => setState({ expForm: { ...state.expForm, subtype: btn.dataset.subtype } }))
+  );
+  document.querySelectorAll("[data-subtype][data-form='inc']").forEach(btn =>
+    btn.addEventListener("click", () => setState({ incForm: { ...state.incForm, subtype: btn.dataset.subtype } }))
+  );
+  document.querySelectorAll("[data-del]").forEach(btn =>
+    btn.addEventListener("click", () => deleteTransaction(btn.dataset.del))
+  );
+  const se = (id, cb) => { const el=document.getElementById(id); if(el) el.addEventListener("input",cb); };
+  se("ef-date", e=>{
+    state.expForm.date = e.target.value;
+    const lbl = e.target.closest(".form-group")?.querySelector(".date-label");
+    if(lbl) lbl.textContent = fmtDateDisplay(e.target.value);
+  });
+  se("ef-amount",   e=>{state.expForm.amount=e.target.value;});
+  se("ef-cat",      e=>{state.expForm.category=e.target.value;});
+  se("ef-desc",     e=>{state.expForm.description=e.target.value;});
+  se("ef-paidby",   e=>{state.expForm.paidBy=e.target.value;});
+  se("ef-payment",  e=>{state.expForm.paymentMethod=e.target.value;});
+  se("if-date", e=>{
+    state.incForm.date = e.target.value;
+    const lbl = e.target.closest(".form-group")?.querySelector(".date-label");
+    if(lbl) lbl.textContent = fmtDateDisplay(e.target.value);
+  });
+  se("if-amount",    e=>{state.incForm.amount=e.target.value;});
+  se("if-from",      e=>{state.incForm.from=e.target.value;});
+  se("if-source",    e=>{state.incForm.source=e.target.value;});
+  se("if-recipient", e=>{state.incForm.recipient=e.target.value;});
+  se("if-desc",      e=>{state.incForm.description=e.target.value;});
+  se("ai-text",      e=>{state.aiText=e.target.value;});
+}
+
+window.sendAI = () => {
+  const text = document.getElementById("ai-text")?.value || state.aiText;
+  if (!text.trim()) return;
+  state.aiText = text;
+  parseWithGemini(text);
+};
+window.submitExpense = submitExpense;
+window.fmtDateDisplay = fmtDateDisplay;
+window.submitIncome  = submitIncome;
+window.changeMonth   = m => { setState({ selectedMonth: m }); loadTransactions(); };
+window.setHistorialFilter = f => setState({ historialFilter: f });
+window.setCategoryFilter   = f => setState({ categoryFilter: f });
+window.setResumenFilter   = f => setState({ resumenFilter: f });
+window.signOut       = () => { window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
+
+render();
+</script>
+</body>
+</html>
