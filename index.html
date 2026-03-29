@@ -283,7 +283,7 @@ async function loadTransactions() {
 async function parseWithGemini(text) {
   setState({ aiLoading: true, aiResult: null });
   try {
-    const parsed = await apiPost("parseWithAI", { text: encodeURIComponent(text) });
+    const parsed = await apiGet("parseWithAI", { text: encodeURIComponent(text) });
 
     if (parsed.type === "expense" || parsed.type === "mother_expense") {
       const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
@@ -326,7 +326,7 @@ async function submitExpense() {
   }
   setState({ loading: true });
   try {
-    await apiPost("addTransaction", {
+    await apiGet("addTransaction", {
       type: f.subtype, amount: parseFloat(f.amount),
       description: f.description || catShort(f.category),
       category: catShort(f.category),
@@ -351,7 +351,7 @@ async function submitIncome() {
   try {
     const desc = f.description ||
       (f.subtype === "transfer" ? `Transferencia de ${f.from} a ${f.recipient}` : f.source);
-    await apiPost("addTransaction", {
+    await apiGet("addTransaction", {
       type: f.subtype, amount: parseFloat(f.amount), description: desc, category: "",
       paidBy: f.subtype === "transfer" ? f.from : "",
       recipient: f.subtype === "transfer" ? f.recipient : "",
@@ -372,7 +372,7 @@ async function deleteTransaction(id) {
   const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.", "Eliminar");
   if (!confirmed) return;
   try {
-    await apiPost("deleteTransaction", { id });
+    await apiGet("deleteTransaction", { id });
     await loadTransactions();
     setTimeout(() => showToast("✓ Eliminado"), 50);
   } catch(e) { showToast("Error al eliminar: " + e.message, true); }
@@ -477,7 +477,7 @@ function editTransaction(id) {
     saveBtn.textContent = "";
     saveBtn.appendChild(spinner);
     try {
-      await apiPost("updateTransaction", {
+      await apiGet("updateTransaction", {
         id: tx.id,
         date: dateInput.value || txDate,
         amount: parseFloat(amountInput.value) || parseFloat(tx.amount),
