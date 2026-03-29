@@ -41,7 +41,6 @@
   .topbar-title { font-family: 'DM Serif Display', serif; font-size: 1.3rem; display: flex; align-items: center; gap: 8px; }
   .topbar-title span { color: var(--mother); font-style: italic; }
   .topbar-user { font-size: 0.75rem; color: var(--muted); text-align: right; }
-  .topbar-user button { background: none; border: none; color: var(--muted); font-size: 0.7rem; cursor: pointer; text-decoration: underline; }
   .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 80px); min-height: 0; }
 
   /* ── Bottom nav ── */
@@ -93,8 +92,12 @@
   .tx-amount.mother_expense { color: var(--expense); }
   .tx-amount.income         { color: var(--income); }
   .tx-amount.transfer       { color: var(--mother); }
-  .tx-del { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1rem; }
-  .tx-edit { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 0.85rem; }
+  .tx-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .tx-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1rem; border-radius: 6px; transition: color .15s; }
+  .tx-btn:hover { color: var(--text); }
+  .tx-btn.disabled { opacity: 0.2; cursor: not-allowed; pointer-events: none; }
+  /* edited badge */
+  .tx-edited { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; flex-shrink: 0; }
 
   /* ── Summary / Resumen ── */
   .section { padding: 16px 16px 0; }
@@ -133,6 +136,18 @@
   .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
+  /* ── Activity log modal ── */
+  .log-entry { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .log-action { font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 99px; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+  .log-action.create { background: rgba(110,231,183,.15); color: var(--income); }
+  .log-action.edit   { background: rgba(245,158,11,.15);  color: var(--accent); }
+  .log-action.delete { background: rgba(252,165,165,.15); color: var(--expense); }
+  .log-body { flex: 1; min-width: 0; }
+  .log-who  { font-size: 0.8rem; font-weight: 500; }
+  .log-when { font-size: 0.72rem; color: var(--muted); margin-bottom: 4px; }
+  .log-diff { font-size: 0.75rem; color: var(--muted); }
+  .log-diff span { color: var(--text); }
+
   .toast { position: fixed; top: calc(var(--safe-top) + 16px); left: 50%; transform: translateX(-50%); background: var(--income); color: #0f1a0f; padding: 10px 20px; border-radius: 99px; font-size: 0.85rem; font-weight: 600; z-index: 999; pointer-events: none; opacity: 0; transition: opacity .3s; white-space: nowrap; }
   .toast.show { opacity: 1; }
   .toast.error { background: var(--expense); color: #1a0f0f; }
@@ -140,10 +155,8 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 0.88rem; }
   #ai-text:focus { outline: none; border-color: var(--mother); }
-  /* Filter chips */
   .filter-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 99px; padding: 5px 12px; font-size: 0.75rem; color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
   .filter-chip.active { background: var(--mother); color: #1a1a2e; border-color: var(--mother); font-weight: 600; }
-  /* Date input — force visible on Safari iOS */
   input[type="date"].date-input { color: var(--text); -webkit-appearance: none; appearance: none; }
   input[type="date"].date-input::-webkit-date-and-time-value { text-align: left; }
 </style>
@@ -158,39 +171,43 @@
 const CONFIG = {
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxT0O32r7miv08TyBgi3cA71s6Wbr9-UmanR990hWU0KLTiNElh1YlXs5iUDjBN-40sEQ/exec",
   GOOGLE_CLIENT_ID: "434284641729-ujfijla3m0f0n59bhanfec9vmcc5nd7a.apps.googleusercontent.com",
+  ADMIN_EMAILS: ["admin@fucer.org", "coroleu@gmail.com"],
   SIBLINGS: ["Fede", "Mery", "Vero"],
   INCOME_SOURCES: ["Jubilación", "Alquiler", "Aporte Fede", "Aporte Vero", "Aporte Mery", "Otros"],
   CATEGORIES: ["🛒 Supermercado", "💡 Servicios", "🍽️ Salidas", "🏥 Médico", "💰 Otros"],
   PAYMENT_METHODS: ["Cuenta", "Tarjeta", "Débito"],
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
+  EMAIL_TO_SIBLING: {
+    "admin@fucer.org": "Fede",
+    "coroleu@gmail.com": "Fede",
+    "mery@fucer.org": "Mery",
+    "verocoroleu@fucer.org": "Vero",
+  },
 };
 
 function today() {
   const d = new Date();
-  const offset = d.getTimezoneOffset();
-  const local = new Date(d.getTime() - offset * 60000);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0,10);
 }
-function catShort(c) { return c.replace(/^[^\s]+\s/,""); } // strip emoji prefix for display
+function catShort(c) { return c.replace(/^[^\s]+\s/,""); }
 
-// ── State ─────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────
 let state = {
   user: null, idToken: null,
   tab: "gastos",
-  transactions: [],      // all transactions, unfiltered
+  transactions: [],
   loading: false,
   selectedMonth: new Date().toISOString().slice(0,7),
   historialFilter: "all",
   categoryFilter: "all",
   sibFilter: "all",
-  resumenFilter: new Date().toISOString().slice(0,7), // default = current month
-  // Expense form — subtype: "expense" | "mother_expense"
+  resumenFilter: new Date().toISOString().slice(0,7),
   expForm: {
     subtype: "expense",
     amount: "", description: "", category: CONFIG.CATEGORIES[0],
     paidBy: "", paymentMethod: "Cuenta", date: today(),
   },
-  // Income/transfer form — subtype: "transfer" | "income"
   aiText: "",
   showTutorial: false,
   aiLoading: false,
@@ -199,21 +216,39 @@ let state = {
     subtype: "transfer",
     amount: "", description: "",
     source: "Jubilación",
-    from: "Mamá",   // transfer sender: "Mamá" or a sibling name
-    recipient: "",  // transfer receiver
+    from: "Mamá",
+    recipient: "",
     date: today(),
   },
 };
 
 function setState(patch) { Object.assign(state, patch); render(); }
 
-// ── API ───────────────────────────────────────────────
-async function api(action, params={}) {
-  const token = state.idToken;
-  // Use GET for everything to avoid CORS preflight issues with Apps Script
-  // Do NOT send month filter — load all transactions, filter client-side
-  const q = new URLSearchParams({ action, token, ...params });
+// ── Helpers ────────────────────────────────────────────────
+function isAdmin() {
+  return CONFIG.ADMIN_EMAILS.includes(state.user?.email || "");
+}
+
+function canEditTx(tx) {
+  if (!state.user) return false;
+  if (isAdmin()) return true;
+  return tx.loggedByEmail === state.user.email;
+}
+
+// ── API ────────────────────────────────────────────────────
+async function apiGet(action, params={}) {
+  const q = new URLSearchParams({ action, token: state.idToken, ...params });
   const r = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${q}`, { redirect: "follow" });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error);
+  return d.data;
+}
+
+async function apiPost(action, params={}) {
+  const body = new URLSearchParams({ action, token: state.idToken, ...params });
+  const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
+    method: "POST", redirect: "follow", body,
+  });
   const d = await r.json();
   if (!d.ok) throw new Error(d.error);
   return d.data;
@@ -223,8 +258,7 @@ async function loadTransactions() {
   if (!state.user) return;
   setState({ loading: true });
   try {
-    const data = await api("transactions");
-    console.log("loadTransactions — month:", state.selectedMonth, "rows returned:", data.length, "data:", JSON.stringify(data).slice(0,300));
+    const data = await apiGet("transactions");
     const sorted = data.sort((a,b) => {
       const da = (a.date || a.timestamp || "").slice(0,10);
       const db = (b.date || b.timestamp || "").slice(0,10);
@@ -232,13 +266,12 @@ async function loadTransactions() {
     });
     setState({ transactions: sorted, loading: false });
   } catch(e) {
-    console.error("loadTransactions error:", e);
     showToast("Error cargando datos", true);
     setState({ loading: false });
   }
 }
 
-// ── AI parser — calls Apps Script proxy (key stays server-side) ──
+// ── AI parser ──────────────────────────────────────────────
 async function parseWithGemini(text) {
   setState({ aiLoading: true, aiResult: null });
   try {
@@ -251,47 +284,30 @@ async function parseWithGemini(text) {
     if (parsed.type === "expense" || parsed.type === "mother_expense") {
       const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
       setState({
-        aiLoading: false, aiResult: parsed,
-        tab: "gastos",
-        expForm: {
-          ...state.expForm,
-          subtype: parsed.type,
-          amount: parsed.amount ? String(parsed.amount) : "",
-          description: parsed.description || "",
-          category: cat,
-          paidBy: parsed.paidBy || state.expForm.paidBy,
-          paymentMethod: parsed.paymentMethod || "Cuenta",
-          date: parsed.date || today(),
-        }
+        aiLoading: false, aiResult: parsed, tab: "gastos",
+        expForm: { ...state.expForm, subtype: parsed.type, amount: parsed.amount ? String(parsed.amount) : "",
+          description: parsed.description || "", category: cat, paidBy: parsed.paidBy || state.expForm.paidBy,
+          paymentMethod: parsed.paymentMethod || "Cuenta", date: parsed.date || today() }
       });
     } else {
       setState({
-        aiLoading: false, aiResult: parsed,
-        tab: "ingresos",
-        incForm: {
-          ...state.incForm,
-          subtype: parsed.type || "transfer",
-          amount: parsed.amount ? String(parsed.amount) : "",
-          description: parsed.description || "",
-          source: parsed.source || state.incForm.source,
-          recipient: parsed.recipient || "",
-          from: parsed.type === "transfer" ? "Mamá" : state.incForm.from,
-          date: parsed.date || today(),
-        }
+        aiLoading: false, aiResult: parsed, tab: "ingresos",
+        incForm: { ...state.incForm, subtype: parsed.type || "transfer", amount: parsed.amount ? String(parsed.amount) : "",
+          description: parsed.description || "", source: parsed.source || state.incForm.source,
+          recipient: parsed.recipient || "", from: parsed.type === "transfer" ? "Mamá" : state.incForm.from,
+          date: parsed.date || today() }
       });
     }
   } catch(e) {
-    console.error("AI error:", e);
     setState({ aiLoading: false, aiResult: { interpretation: "No pude entender el texto. Completá el formulario manualmente.", confidence: "low" } });
   }
 }
 
-// ── Submit expense ─────────────────────────────────────
+// ── Submit expense ─────────────────────────────────────────
 async function submitExpense() {
   const f = state.expForm;
   if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
   if (f.subtype === "expense" && !f.paidBy) { showToast("Seleccioná quién pagó", true); return; }
-  // Duplicate detection
   const amt = parseFloat(f.amount);
   const dup = state.transactions.find(t =>
     parseFloat(t.amount) === amt &&
@@ -299,37 +315,30 @@ async function submitExpense() {
     t.type === f.subtype
   );
   if (dup) {
-    const ok = await showConfirm(
-      "¿Posible duplicado?",
-      `Ya existe un ${f.subtype === "expense" ? "gasto" : "gasto de mamá"} de ${fmt(amt)} el ${fmtDateDisplay(f.date)}. ¿Guardás igual?`
-    );
+    const ok = await showConfirm("¿Posible duplicado?",
+      `Ya existe un ${f.subtype === "expense" ? "gasto" : "gasto de mamá"} de ${fmt(amt)} el ${fmtDateDisplay(f.date)}. ¿Guardás igual?`,
+      "Guardar igual");
     if (!ok) return;
   }
   setState({ loading: true });
   try {
-    await api("addTransaction", {
-      type: f.subtype,
-      amount: parseFloat(f.amount),
+    await apiPost("addTransaction", {
+      type: f.subtype, amount: parseFloat(f.amount),
       description: f.description || catShort(f.category),
       category: catShort(f.category),
       paidBy: f.subtype === "expense" ? f.paidBy : "",
       paymentMethod: f.subtype === "mother_expense" ? f.paymentMethod : "",
-      recipient: "",
-      date: f.date,
-      source: "manual",
+      recipient: "", date: f.date, source: "manual",
     });
     const defaultPaidBy = matchSibling(state.user?.firstName);
-    setState({
-      loading: false,
-      aiText: "", aiLoading: false, aiResult: null,
-      expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() },
-    });
+    setState({ loading: false, aiText: "", aiLoading: false, aiResult: null,
+      expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() } });
     loadTransactions();
     setTimeout(() => showToast("✓ Gasto guardado"), 50);
-  } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
+  } catch(e) { setState({ loading: false }); showToast("Error al guardar: " + e.message, true); }
 }
 
-// ── Submit income / transfer ───────────────────────────
+// ── Submit income / transfer ───────────────────────────────
 async function submitIncome() {
   const f = state.incForm;
   if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
@@ -338,211 +347,362 @@ async function submitIncome() {
   try {
     const desc = f.description ||
       (f.subtype === "transfer" ? `Transferencia de ${f.from} a ${f.recipient}` : f.source);
-    await api("addTransaction", {
-      type: f.subtype,
-      amount: parseFloat(f.amount),
-      description: desc,
-      category: "",
+    await apiPost("addTransaction", {
+      type: f.subtype, amount: parseFloat(f.amount), description: desc, category: "",
       paidBy: f.subtype === "transfer" ? f.from : "",
       recipient: f.subtype === "transfer" ? f.recipient : "",
-      source_type: f.source || "",
-      date: f.date,
-      source: "manual",
+      source_type: f.source || "", date: f.date, source: "manual",
     });
-    setState({
-      loading: false,
-      aiText: "",
-  aiLoading: false,
-  aiResult: null,
-  incForm: { ...f, amount: "", description: "", date: today() },
-    });
+    setState({ loading: false, aiText: "", aiLoading: false, aiResult: null,
+      incForm: { ...f, amount: "", description: "", date: today() } });
     loadTransactions();
     setTimeout(() => showToast("✓ Registrado"), 50);
-  } catch(e) { setState({ loading: false }); showToast("Error al guardar", true); }
+  } catch(e) { setState({ loading: false }); showToast("Error al guardar: " + e.message, true); }
 }
 
+// ── Delete ─────────────────────────────────────────────────
 async function deleteTransaction(id) {
-  const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.");
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+  if (!canEditTx(tx)) { showToast("No tenés permiso para eliminar esta transacción", true); return; }
+  const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.", "Eliminar");
   if (!confirmed) return;
   try {
-    await api("deleteTransaction", { id });
+    await apiPost("deleteTransaction", { id });
     await loadTransactions();
     setTimeout(() => showToast("✓ Eliminado"), 50);
-  } catch(e) { showToast("Error al eliminar", true); }
+  } catch(e) { showToast("Error al eliminar: " + e.message, true); }
 }
 
-function editTransaction(id, txJson) {
-  let tx;
-  try { tx = JSON.parse(txJson.replace(/&#39;/g,"'")); } catch(e) { return; }
-  
+// ── Edit — now uses updateTransaction ──────────────────────
+function editTransaction(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+  if (!canEditTx(tx)) { showToast("No tenés permiso para editar esta transacción", true); return; }
+
   const overlay = document.createElement("div");
   overlay.id = "edit-overlay";
   overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.9);z-index:9999;display:flex;align-items:flex-end;justify-content:center;";
-  const cats = CONFIG.CATEGORIES.map(c => `<option value="${catShort(c)}" ${catShort(c)===tx.category?"selected":""}>${c}</option>`).join("");
-  const sibs = CONFIG.SIBLINGS.map(s => `<option value="${s}" ${s===tx.paidBy?"selected":""}>${s}</option>`).join("");
-  overlay.innerHTML = `
-    <div style="background:var(--surface);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;">
-      <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-        ✏️ Editar transacción
-        <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;">×</button>
-      </div>
-      <div style="margin-bottom:12px;">
-        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Fecha</label>
-        <input id="edit-date" type="date" value="${tx.date}" style="width:100%;max-width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;-webkit-appearance:none;appearance:none;">
-        <div id="edit-date-label" style="font-size:0.78rem;color:var(--mother);margin-top:4px;">${fmtDateDisplay(tx.date)}</div>
-      </div>
-      <div style="margin-bottom:12px;">
-        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Monto</label>
-        <input id="edit-amount" type="number" value="${tx.amount}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">
-      </div>
-      <div style="margin-bottom:12px;">
-        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Descripción</label>
-        <input id="edit-desc" type="text" value="${tx.description||""}" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">
-      </div>
-      ${tx.category ? `<div style="margin-bottom:12px;">
-        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Categoría</label>
-        <select id="edit-cat" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">${cats}</select>
-      </div>` : ""}
-      ${tx.paidBy && CONFIG.SIBLINGS.includes(tx.paidBy) ? `<div style="margin-bottom:16px;">
-        <label style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;">Pagado por</label>
-        <select id="edit-paidby" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;">${sibs}</select>
-      </div>` : ""}
-      <button id="edit-save-btn" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;">Guardar cambios</button>
-    </div>`;
+
+  const sheet = document.createElement("div");
+  sheet.style.cssText = "background:var(--surface);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;";
+
+  // Header
+  const header = document.createElement("div");
+  header.style.cssText = "font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;";
+  const headerText = document.createElement("span");
+  headerText.textContent = "✏️ Editar transacción";
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "×";
+  closeBtn.style.cssText = "background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;";
+  closeBtn.onclick = () => overlay.remove();
+  header.appendChild(headerText);
+  header.appendChild(closeBtn);
+  sheet.appendChild(header);
+
+  function makeField(label, input) {
+    const wrap = document.createElement("div");
+    wrap.style.marginBottom = "12px";
+    const lbl = document.createElement("label");
+    lbl.textContent = label;
+    lbl.style.cssText = "font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:5px;";
+    wrap.appendChild(lbl);
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function styledInput(type, value) {
+    const el = document.createElement("input");
+    el.type = type;
+    el.value = value;
+    el.style.cssText = "width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;box-sizing:border-box;";
+    if (type === "date") { el.style.webkitAppearance = "none"; el.style.appearance = "none"; }
+    return el;
+  }
+
+  function styledSelect(options, currentVal) {
+    const el = document.createElement("select");
+    el.style.cssText = "width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:0.9rem;box-sizing:border-box;";
+    options.forEach(([val, label]) => {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      if (val === currentVal) opt.selected = true;
+      el.appendChild(opt);
+    });
+    return el;
+  }
+
+  const txDate = (tx.date || tx.timestamp || "").slice(0,10);
+
+  const dateInput   = styledInput("date", txDate);
+  const dateLabel   = document.createElement("div");
+  dateLabel.style.cssText = "font-size:0.78rem;color:var(--mother);margin-top:4px;";
+  dateLabel.textContent = fmtDateDisplay(txDate);
+  dateInput.addEventListener("input", () => { dateLabel.textContent = fmtDateDisplay(dateInput.value); });
+  const dateWrap = makeField("Fecha", dateInput);
+  dateWrap.appendChild(dateLabel);
+  sheet.appendChild(dateWrap);
+
+  const amountInput = styledInput("number", tx.amount);
+  sheet.appendChild(makeField("Monto", amountInput));
+
+  const descInput = styledInput("text", tx.description || "");
+  sheet.appendChild(makeField("Descripción", descInput));
+
+  let catSelect = null;
+  if (tx.category) {
+    catSelect = styledSelect(CONFIG.CATEGORIES.map(c => [catShort(c), c]), tx.category);
+    sheet.appendChild(makeField("Categoría", catSelect));
+  }
+
+  let paidBySelect = null;
+  if (tx.paidBy && CONFIG.SIBLINGS.includes(tx.paidBy)) {
+    paidBySelect = styledSelect(CONFIG.SIBLINGS.map(s => [s, s]), tx.paidBy);
+    sheet.appendChild(makeField("Pagado por", paidBySelect));
+  }
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Guardar cambios";
+  saveBtn.style.cssText = "width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;";
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    const spinner = document.createElement("div");
+    spinner.className = "spinner";
+    spinner.style.cssText = "margin:auto;border-top-color:#1a1a2e;border-color:rgba(26,26,46,0.3);";
+    saveBtn.textContent = "";
+    saveBtn.appendChild(spinner);
+    try {
+      await apiPost("updateTransaction", {
+        id: tx.id,
+        date: dateInput.value || txDate,
+        amount: parseFloat(amountInput.value) || parseFloat(tx.amount),
+        description: descInput.value,
+        category: catSelect ? catSelect.value : (tx.category || ""),
+        paidBy: paidBySelect ? paidBySelect.value : (tx.paidBy || ""),
+        recipient: tx.recipient || "",
+        paymentMethod: tx.paymentMethod || "",
+      });
+      overlay.remove();
+      await loadTransactions();
+      setState({ tab: "movimientos" });
+      setTimeout(() => showToast("✓ Cambios guardados"), 100);
+    } catch(e) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Guardar cambios";
+      showToast("Error: " + e.message, true);
+    }
+  };
+  sheet.appendChild(saveBtn);
+  overlay.appendChild(sheet);
   document.body.appendChild(overlay);
-  overlay.addEventListener("click", e => { if(e.target===overlay) overlay.remove(); });
-  document.getElementById("edit-save-btn").addEventListener("click", () => window.saveEdit(id, tx));
-  document.getElementById("edit-date").addEventListener("input", e => {
-    const lbl = document.getElementById("edit-date-label");
-    if (lbl) lbl.textContent = fmtDateDisplay(e.target.value);
-  });
+  overlay.addEventListener("click", e => { if(e.target === overlay) overlay.remove(); });
 }
 
-window.saveEdit = async (id, original) => {
-  const date    = document.getElementById("edit-date")?.value || original.date;
-  const amount  = parseFloat(document.getElementById("edit-amount")?.value) || parseFloat(original.amount);
-  const desc    = document.getElementById("edit-desc")?.value || original.description;
-  const cat     = document.getElementById("edit-cat")?.value || original.category;
-  const paidBy  = document.getElementById("edit-paidby")?.value || original.paidBy;
+// ── Activity log modal ─────────────────────────────────────
+async function showActivityLog(txId) {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.9);z-index:9999;display:flex;align-items:flex-end;justify-content:center;";
 
-  // Show loading inside overlay
-  const saveBtn = document.getElementById("edit-save-btn");
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<div class="spinner" style="margin:auto;border-top-color:#1a1a2e;border-color:rgba(26,26,46,0.3);"></div>'; }
+  const sheet = document.createElement("div");
+  sheet.style.cssText = "background:var(--surface);border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:500px;max-height:75vh;overflow-y:auto;";
 
-  const editNote = `[Editado ${new Date().toLocaleDateString("es-AR")} por ${state.user?.firstName}]`;
+  const header = document.createElement("div");
+  header.style.cssText = "font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;";
+  const headerText = document.createElement("span");
+  headerText.textContent = "🕐 Historial de cambios";
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "×";
+  closeBtn.style.cssText = "background:none;border:none;color:var(--muted);font-size:1.3rem;cursor:pointer;";
+  closeBtn.onclick = () => overlay.remove();
+  header.appendChild(headerText);
+  header.appendChild(closeBtn);
+  sheet.appendChild(header);
+
+  const loadingEl = document.createElement("div");
+  loadingEl.className = "empty";
+  loadingEl.innerHTML = '<div class="spinner"></div>';
+  sheet.appendChild(loadingEl);
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if(e.target === overlay) overlay.remove(); });
+
   try {
-    await api("deleteTransaction", { id });
-    await api("addTransaction", {
-      type: original.type,
-      amount,
-      description: desc + " " + editNote,
-      category: cat,
-      paidBy,
-      recipient: original.recipient || "",
-      paymentMethod: original.paymentMethod || "",
-      date,
-      source: "manual",
-    });
-    document.getElementById("edit-overlay")?.remove();
-    await loadTransactions();
-    setState({ tab: "movimientos" });
-    setTimeout(() => showToast("✓ Cambios guardados"), 100);
-  } catch(e) {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = "Guardar cambios"; }
-    showToast("Error al guardar", true);
-  }
-};
+    const entries = await apiGet("activityLog", { txId });
+    sheet.removeChild(loadingEl);
 
-function showConfirm(title, subtitle) {
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Sin historial registrado";
+      sheet.appendChild(empty);
+      return;
+    }
+
+    entries.forEach(entry => {
+      const row = document.createElement("div");
+      row.className = "log-entry";
+
+      const badge = document.createElement("div");
+      badge.className = "log-action " + (entry.action || "");
+      badge.textContent = entry.action === "create" ? "Creó" : entry.action === "edit" ? "Editó" : "Eliminó";
+      row.appendChild(badge);
+
+      const body = document.createElement("div");
+      body.className = "log-body";
+
+      const who = document.createElement("div");
+      who.className = "log-who";
+      who.textContent = entry.actorName || entry.actorEmail || "?";
+      body.appendChild(who);
+
+      const when = document.createElement("div");
+      when.className = "log-when";
+      when.textContent = fmtTimestamp(entry.timestamp);
+      body.appendChild(when);
+
+      // Show diff for edits
+      if (entry.action === "edit" && entry.before && entry.after) {
+        try {
+          const before = typeof entry.before === "string" ? JSON.parse(entry.before) : entry.before;
+          const after  = typeof entry.after  === "string" ? JSON.parse(entry.after)  : entry.after;
+          const diffs  = [];
+          const fields = { amount:"Monto", description:"Descripción", date:"Fecha", category:"Categoría", paidBy:"Pagado por" };
+          Object.entries(fields).forEach(([k, label]) => {
+            const bv = String(before[k] || "");
+            const av = String(after[k]  || "");
+            if (bv !== av) diffs.push({ label, from: bv, to: av });
+          });
+          if (diffs.length) {
+            const diffEl = document.createElement("div");
+            diffEl.className = "log-diff";
+            diffs.forEach(d => {
+              const line = document.createElement("div");
+              line.style.marginTop = "2px";
+              const label = document.createElement("span");
+              label.textContent = d.label + ": ";
+              const from = document.createElement("span");
+              from.style.textDecoration = "line-through";
+              from.style.color = "var(--expense)";
+              from.textContent = d.label === "amount" ? fmt(parseFloat(d.from)||0) : d.from;
+              const arrow = document.createTextNode(" → ");
+              const to = document.createElement("span");
+              to.style.color = "var(--income)";
+              to.textContent = d.label === "amount" ? fmt(parseFloat(d.to)||0) : d.to;
+              line.appendChild(label);
+              line.appendChild(from);
+              line.appendChild(arrow);
+              line.appendChild(to);
+              diffEl.appendChild(line);
+            });
+            body.appendChild(diffEl);
+          }
+        } catch(_) {}
+      }
+
+      row.appendChild(body);
+      sheet.appendChild(row);
+    });
+  } catch(e) {
+    sheet.removeChild(loadingEl);
+    const errEl = document.createElement("div");
+    errEl.className = "empty";
+    errEl.textContent = "Error cargando historial";
+    sheet.appendChild(errEl);
+  }
+}
+
+function fmtTimestamp(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleDateString("es-AR", { day:"numeric", month:"short", year:"numeric" }) + " " +
+         d.toLocaleTimeString("es-AR", { hour:"2-digit", minute:"2-digit" });
+}
+
+// ── Confirm dialog ─────────────────────────────────────────
+function showConfirm(title, subtitle, okLabel="Confirmar") {
   return new Promise(resolve => {
     const overlay = document.createElement("div");
     overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;";
-    overlay.innerHTML = `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:320px;width:100%;text-align:center;">
-        <div style="font-size:1.5rem;margin-bottom:8px;">🗑️</div>
-        <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:6px;">${title}</div>
-        <div style="font-size:0.82rem;color:var(--muted);margin-bottom:24px;">${subtitle}</div>
-        <div style="display:flex;gap:10px;">
-          <button id="confirm-cancel" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:0.9rem;cursor:pointer;">Cancelar</button>
-          <button id="confirm-ok" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--expense);color:#1a0f0f;font-family:inherit;font-size:0.9rem;font-weight:600;cursor:pointer;">Eliminar</button>
-        </div>
-      </div>`;
+
+    const card = document.createElement("div");
+    card.style.cssText = "background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:320px;width:100%;text-align:center;";
+
+    const icon = document.createElement("div");
+    icon.style.cssText = "font-size:1.5rem;margin-bottom:8px;";
+    icon.textContent = "⚠️";
+    card.appendChild(icon);
+
+    const t = document.createElement("div");
+    t.style.cssText = "font-family:'DM Serif Display',serif;font-size:1.1rem;margin-bottom:6px;";
+    t.textContent = title;
+    card.appendChild(t);
+
+    const s = document.createElement("div");
+    s.style.cssText = "font-size:0.82rem;color:var(--muted);margin-bottom:24px;";
+    s.textContent = subtitle;
+    card.appendChild(s);
+
+    const btns = document.createElement("div");
+    btns.style.cssText = "display:flex;gap:10px;";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Cancelar";
+    cancelBtn.style.cssText = "flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:0.9rem;cursor:pointer;";
+    cancelBtn.onclick = () => { overlay.remove(); resolve(false); };
+
+    const okBtn = document.createElement("button");
+    okBtn.textContent = okLabel;
+    okBtn.style.cssText = "flex:1;padding:12px;border-radius:10px;border:none;background:var(--expense);color:#1a0f0f;font-family:inherit;font-size:0.9rem;font-weight:600;cursor:pointer;";
+    okBtn.onclick = () => { overlay.remove(); resolve(true); };
+
+    btns.appendChild(cancelBtn);
+    btns.appendChild(okBtn);
+    card.appendChild(btns);
+    overlay.appendChild(card);
     document.body.appendChild(overlay);
-    document.getElementById("confirm-cancel").onclick = () => { overlay.remove(); resolve(false); };
-    document.getElementById("confirm-ok").onclick    = () => { overlay.remove(); resolve(true); };
   });
 }
 
-// ── Computed balances ──────────────────────────────────
+// ── Computed balances ──────────────────────────────────────
 function computeBalances(txs) {
   txs = txs || state.transactions;
-
-  // Per-sibling operational balance (plata de mamá que tienen en mano)
   const sib = {};
   CONFIG.SIBLINGS.forEach(s => sib[s] = { received: 0, spent: 0, aportes: 0 });
-
-  // Mamá account
-  let mamaIngresos = 0;   // ingresos que fueron a mamá
-  let mamaGastos   = 0;   // gastos directos de su cuenta
-
-  // System totals
-  let totalIngresos  = 0;  // ALL income regardless of destination
-  let totalGastos    = 0;  // ALL expenses (hermanos + mamá)
-  let totalTransfers = 0;  // ALL transfers from mamá to hermanos
+  let mamaIngresos = 0, mamaGastos = 0, totalIngresos = 0, totalGastos = 0, totalTransfers = 0;
 
   txs.forEach(t => {
     const amt = parseFloat(t.amount || 0);
-
     if (t.type === "income") {
       totalIngresos += amt;
-      // Where did it go?
-      if (t.recipient && sib[t.recipient] !== undefined) {
-        // Income deposited directly to a sibling (e.g. aporte goes to Mery)
-        sib[t.recipient].received += amt;
-      } else {
-        // Goes to mamá's account
-        mamaIngresos += amt;
-      }
-      // Track aportes per sibling (source_type starts with "Aporte")
+      if (t.recipient && sib[t.recipient] !== undefined) sib[t.recipient].received += amt;
+      else mamaIngresos += amt;
       if ((t.source_type || t.description || "").startsWith("Aporte")) {
         const src = t.source_type || "";
-        CONFIG.SIBLINGS.forEach(s => {
-          if (src.includes(s) && sib[s]) sib[s].aportes += amt;
-        });
+        CONFIG.SIBLINGS.forEach(s => { if (src.includes(s) && sib[s]) sib[s].aportes += amt; });
       }
     }
-
     if (t.type === "transfer") {
-      // Mamá moves money to a sibling — sibling gets operational balance
       totalTransfers += amt;
-      if (t.recipient && sib[t.recipient] !== undefined) {
-        sib[t.recipient].received += amt;
-      }
+      if (t.recipient && sib[t.recipient] !== undefined) sib[t.recipient].received += amt;
     }
-
     if (t.type === "expense") {
       totalGastos += amt;
-      if (t.paidBy && sib[t.paidBy] !== undefined) {
-        sib[t.paidBy].spent += amt;
-      }
+      if (t.paidBy && sib[t.paidBy] !== undefined) sib[t.paidBy].spent += amt;
     }
-
-    if (t.type === "mother_expense") {
-      totalGastos += amt;
-      mamaGastos += amt;
-    }
+    if (t.type === "mother_expense") { totalGastos += amt; mamaGastos += amt; }
   });
 
-  // Saldo cuenta mamá = lo que entró a su cuenta − gastos directos − transferencias enviadas
-  const mamaBalance = mamaIngresos - mamaGastos - totalTransfers;
-
-  // Saldo total mamá = todos los ingresos − todos los gastos (incl. lo que tienen hermanos)
-  const systemBalance = totalIngresos - totalGastos;
-
-  return { sib, mamaIngresos, mamaGastos, mamaBalance, totalIngresos, totalGastos, systemBalance, totalTransfers };
+  return {
+    sib, mamaIngresos, mamaGastos,
+    mamaBalance: mamaIngresos - mamaGastos - totalTransfers,
+    totalIngresos, totalGastos,
+    systemBalance: totalIngresos - totalGastos,
+    totalTransfers,
+  };
 }
 
-// sorted siblings by net balance descending
 function sortedBalances(txs) {
   const { sib } = computeBalances(txs);
   return CONFIG.SIBLINGS
@@ -550,31 +710,20 @@ function sortedBalances(txs) {
     .sort((a,b) => b.net - a.net);
 }
 
-// ── Google Sign-In ─────────────────────────────────────
+// ── Google Sign-In ─────────────────────────────────────────
 function initGoogleSignIn() {
   window.google.accounts.id.initialize({
     client_id: CONFIG.GOOGLE_CLIENT_ID,
     callback: (response) => {
       const payload = parseJwt(response.credential);
-      const firstName = payload.name?.split(" ")[0] || payload.name;
-      // Map known emails to sibling names explicitly
-      const emailToSibling = {
-        "admin@fucer.org": "Fede",
-        "coroleu@gmail.com": "Fede",
-        "mery@fucer.org": "Mery",
-        "merycoroleu@hotmail.com": "Mery",
-        "verocoroleu@fucer.org": "Vero",
-      };
-      const matched = emailToSibling[payload.email] || matchSibling(firstName);
+      const matched = CONFIG.EMAIL_TO_SIBLING[payload.email] || matchSibling(payload.name?.split(" ")[0] || "");
       setState({
         user: { name: payload.name, firstName: matched, email: payload.email },
         idToken: response.credential,
         expForm: { ...state.expForm, paidBy: matched },
       });
       loadTransactions();
-      // Show tutorial on first visit
-      const seen = localStorage.getItem("mf_tutorial_seen");
-      if (!seen) setTimeout(() => setState({ showTutorial: true }), 1000);
+      if (!localStorage.getItem("mf_tutorial_seen")) setTimeout(() => setState({ showTutorial: true }), 1000);
     },
     auto_select: true,
   });
@@ -591,7 +740,7 @@ function parseJwt(token) {
   return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
 }
 
-// ── Toast ──────────────────────────────────────────────
+// ── Toast ──────────────────────────────────────────────────
 let toastTimer;
 function showToast(msg, isError=false) {
   const el = document.getElementById("toast");
@@ -602,24 +751,15 @@ function showToast(msg, isError=false) {
   toastTimer = setTimeout(() => { el.className = "toast"; }, 8000);
 }
 
-// ── Formatters ─────────────────────────────────────────
-function formatDateDisplay(iso) {
-  if (!iso) return "Seleccionar fecha";
-  const [y,m,d] = iso.split("-");
-  const months = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
-}
-
-// Filter transactions client-side
+// ── Formatters ─────────────────────────────────────────────
 function filterTxs(txs, filter) {
   if (!filter || filter === "all") return txs;
-  const now = new Date();
-  const thisYear = now.getFullYear().toString();
+  const thisYear = new Date().getFullYear().toString();
   return txs.filter(t => {
     const d = (t.date || t.timestamp || "").slice(0,10);
     if (filter === "ytd") return d.slice(0,4) === thisYear && d <= today();
-    if (filter.length === 4) return d.slice(0,4) === filter; // year filter
-    return d.slice(0,7) === filter; // month filter
+    if (filter.length === 4) return d.slice(0,4) === filter;
+    return d.slice(0,7) === filter;
   });
 }
 
@@ -639,15 +779,6 @@ const AI_PLACEHOLDERS = [
   '"Transferencia de 300 lucas a Mery"',
 ];
 let aiPlaceholderIdx = 0;
-function getAIPlaceholder() {
-  return AI_PLACEHOLDERS[aiPlaceholderIdx % AI_PLACEHOLDERS.length];
-}
-// Rotate placeholder every 4 seconds
-setInterval(() => {
-  aiPlaceholderIdx++;
-  const el = document.getElementById("ai-text");
-  if (el && !el.value) el.placeholder = getAIPlaceholder();
-}, 4000);
 
 function txIcon(t) {
   if (t.type === "expense") {
@@ -658,34 +789,27 @@ function txIcon(t) {
     if (cat.includes("Médico"))       return "🏥";
     return "📦";
   }
-  if (t.type === "mother_expense") {
-    const pm = (t.paymentMethod || "").toLowerCase();
-    if (pm === "tarjeta") return "💳";
-    return "🏦";
-  }
+  if (t.type === "mother_expense") return (t.paymentMethod||"").toLowerCase() === "tarjeta" ? "💳" : "🏦";
   if (t.type === "transfer") return "📤";
   if (t.type === "income") {
     const src = (t.source_type || t.description || "").toLowerCase();
-    if (src.includes("jubilación") || src.includes("jubilacion")) return "💵";
-    if (src.includes("alquiler"))  return "🏠";
-    if (src.includes("aporte"))    return "🤝";
+    if (src.includes("jubilaci")) return "💵";
+    if (src.includes("alquiler")) return "🏠";
+    if (src.includes("aporte"))   return "🤝";
     return "💶";
   }
   return "💰";
 }
 
 const fmt = n => new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:0}).format(n);
-const typeEmoji = { income:"💚", expense:"🔴", transfer:"💜", mother_expense:"🟣" };
 const typeLabel = { income:"Ingreso", expense:"Gasto", transfer:"Transferencia", mother_expense:"Gasto mamá" };
 
 function formatDay(iso) {
-  const d = new Date(iso+"T12:00:00");
-  return d.toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  return new Date(iso+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 }
 function fmtDateDisplay(iso) {
   if (!iso) return "";
-  const d = new Date(iso+"T12:00:00");
-  return d.toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"});
+  return new Date(iso+"T12:00:00").toLocaleDateString("es-AR",{day:"numeric",month:"short",year:"numeric"});
 }
 function getLast12Months() {
   const months=[], d=new Date();
@@ -697,7 +821,7 @@ function formatMonth(m) {
   return new Date(parseInt(y),parseInt(mo)-1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
 }
 
-// ── Render ─────────────────────────────────────────────
+// ── Render ─────────────────────────────────────────────────
 function render() {
   const root = document.getElementById("root");
   if (!state.user) { root.innerHTML = renderAuth(); scheduleGoogleInit(); return; }
@@ -715,12 +839,11 @@ function render() {
       <div style="color:var(--muted);font-size:0.85rem;">Guardando...</div>
     </div>` : ""}`;
   attachEvents();
-  // Rotate AI placeholder every 5 seconds
   clearInterval(window._aiPlaceholderInterval);
   window._aiPlaceholderInterval = setInterval(() => {
     const el = document.getElementById("ai-text");
     if (el && !el.value && document.activeElement !== el) {
-      el.placeholder = getAIPlaceholder();
+      el.placeholder = AI_PLACEHOLDERS[aiPlaceholderIdx++ % AI_PLACEHOLDERS.length];
     }
   }, 5000);
 }
@@ -740,11 +863,13 @@ function renderAuth() {
         <div id="g-signin-btn" style="display:flex;justify-content:center;margin-top:8px;"></div>
       </div>
     </div>
-    ${state.showTutorial ? renderTutorial() : ""}
     <div id="toast" class="toast"></div>`;
 }
 
 function renderTopbar() {
+  const adminBadge = isAdmin()
+    ? `<span style="font-size:0.6rem;background:rgba(196,181,253,0.2);color:var(--mother);border-radius:99px;padding:1px 6px;margin-left:4px;">admin</span>`
+    : "";
   return `
     <div class="topbar">
       <div class="topbar-title">
@@ -753,17 +878,17 @@ function renderTopbar() {
       </div>
       <div class="topbar-user" style="display:flex;align-items:center;gap:10px;">
         <button onclick="setState({showTutorial:true})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:99px;width:22px;height:22px;font-size:0.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">?</button>
-        <div style="text-align:right;">${state.user.firstName}<br><button onclick="signOut()" style="background:none;border:none;color:var(--muted);font-size:0.7rem;cursor:pointer;text-decoration:underline;">Salir</button></div>
+        <div style="text-align:right;">${state.user.firstName}${adminBadge}<br><button onclick="signOut()" style="background:none;border:none;color:var(--muted);font-size:0.7rem;cursor:pointer;text-decoration:underline;">Salir</button></div>
       </div>
     </div>`;
 }
 
 function renderBottomNav() {
   const tabs = [
-    { id:"gastos",      label:"Gastos",      svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>` },
-    { id:"ingresos",    label:"Ingresos",    svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M5 12l7-7 7 7"/></svg>` },
-    { id:"movimientos", label:"Historial",   svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>` },
-    { id:"resumen",     label:"Resumen",     svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>` },
+    { id:"gastos",      label:"Gastos",    svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>` },
+    { id:"ingresos",    label:"Ingresos",  svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 19V5M5 12l7-7 7 7"/></svg>` },
+    { id:"movimientos", label:"Historial", svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>` },
+    { id:"resumen",     label:"Resumen",   svg:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>` },
   ];
   return `<nav class="bottom-nav">${tabs.map(t=>`<button class="nav-btn${state.tab===t.id?" active":""}" data-tab="${t.id}">${t.svg}<span>${t.label}</span></button>`).join("")}</nav>`;
 }
@@ -776,7 +901,6 @@ function renderTab() {
   return "";
 }
 
-// ── Mini balances (always sorted) ─────────────────────
 function renderMiniBalances() {
   const sorted = sortedBalances();
   const myName = state.user?.firstName || "";
@@ -791,7 +915,6 @@ function renderMiniBalances() {
   </div>`;
 }
 
-// ── AI input box ──────────────────────────────────────
 function renderAIBox() {
   const ar = state.aiResult;
   return `
@@ -802,7 +925,7 @@ function renderAIBox() {
           style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:0.85rem;"
           value="${state.aiText}" onkeydown="if(event.key==='Enter')sendAI()">
         <input id="ai-photo-input" type="file" accept="image/*" style="display:none;">
-        <button onclick="document.getElementById('ai-photo-input').click()" ${state.aiLoading?"disabled":""} 
+        <button onclick="document.getElementById('ai-photo-input').click()" ${state.aiLoading?"disabled":""}
           title="Foto de ticket"
           style="background:var(--surface2);border:1px solid rgba(196,181,253,0.25);border-radius:10px;padding:9px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:42px;height:42px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(196,181,253,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -983,14 +1106,8 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
 }
 
 function renderMovimientos() {
-  // Saldo always uses ALL transactions (real-time balance)
-  const allBal = sortedBalances();
-
-  // Filtered transactions for the list
   let txs = filterTxs(state.transactions, state.historialFilter);
-  if (state.categoryFilter !== "all") {
-    txs = txs.filter(t => (t.category||"") === state.categoryFilter);
-  }
+  if (state.categoryFilter !== "all") txs = txs.filter(t => (t.category||"") === state.categoryFilter);
   if (state.sibFilter !== "all") {
     const s = state.sibFilter;
     txs = txs.filter(t => {
@@ -999,17 +1116,12 @@ function renderMovimientos() {
     });
   }
 
-  const balSection = "";
-
   const filterBar = renderFilterBar("historialFilter", "setHistorialFilter", true, true);
+  if (state.loading) return filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
 
-  if (state.loading) return balSection + filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
-
-  // Limit to 20 most recent when "all" with no filter
   const displayTxs = (state.historialFilter === "all") ? txs.slice(0, 20) : txs;
   const hasMore = (state.historialFilter === "all") && txs.length > 20;
-
-  if (!displayTxs.length) return balSection + filterBar + `<div class="empty" style="margin-top:24px;">Sin movimientos</div>`;
+  if (!displayTxs.length) return filterBar + `<div class="empty" style="margin-top:24px;">Sin movimientos</div>`;
 
   const grouped = {};
   displayTxs.forEach(t => {
@@ -1018,31 +1130,114 @@ function renderMovimientos() {
     grouped[day].push(t);
   });
   const sortedDays = Object.keys(grouped).sort((a,b)=>b.localeCompare(a));
+  const myEmail = state.user?.email || "";
 
-  return balSection + filterBar + `
-    <div class="tx-list">
-      ${sortedDays.map(day=>`
-        <div class="tx-day">${formatDay(day)}</div>
-        ${grouped[day].map(t=>`
-          <div class="tx-item">
-            <div class="tx-icon ${t.type}">${txIcon(t)}</div>
-            <div class="tx-body">
-              <div class="tx-desc">${t.description||typeLabel[t.type]||t.type}</div>
-              <div class="tx-meta">
-                ${typeLabel[t.type]||t.type}
-                ${t.paidBy?" · "+t.paidBy:""}
-                ${t.recipient?" → "+t.recipient:""}
-                ${t.category?" · "+t.category:""}
-                ${t.paymentMethod?" · "+t.paymentMethod:""}
-              </div>
-            </div>
-            <div class="tx-amount ${t.type}">${fmt(parseFloat(t.amount||0))}</div>
-            <button class="tx-edit" data-edit="${t.id}" data-tx='${JSON.stringify({type:t.type,amount:t.amount,description:t.description,category:t.category,paidBy:t.paidBy,recipient:t.recipient,date:(t.date||t.timestamp||"").slice(0,10),paymentMethod:t.paymentMethod||""}).replace(/'/g,"&#39;")}' title="Editar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-            <button class="tx-del" data-del="${t.id}">×</button>
-          </div>`).join("")}
-      `).join("")}
-      ${hasMore ? `<div style="text-align:center;padding:16px;color:var(--muted);font-size:0.8rem;">Mostrando los últimos 20 movimientos. Usá los filtros para ver más.</div>` : ""}
-    </div>`;
+  // Build tx rows using DOM to avoid XSS
+  const listDiv = document.createElement("div");
+  listDiv.className = "tx-list";
+
+  sortedDays.forEach(day => {
+    const dayEl = document.createElement("div");
+    dayEl.className = "tx-day";
+    dayEl.textContent = formatDay(day);
+    listDiv.appendChild(dayEl);
+
+    grouped[day].forEach(t => {
+      const canEdit = canEditTx(t);
+      const wasEdited = t.updatedAt && String(t.updatedAt).length > 0;
+
+      const item = document.createElement("div");
+      item.className = "tx-item";
+
+      // Icon
+      const icon = document.createElement("div");
+      icon.className = "tx-icon " + t.type;
+      icon.textContent = txIcon(t);
+      item.appendChild(icon);
+
+      // Body
+      const body = document.createElement("div");
+      body.className = "tx-body";
+
+      const descRow = document.createElement("div");
+      descRow.className = "tx-desc";
+      const descText = document.createElement("span");
+      descText.textContent = t.description || typeLabel[t.type] || t.type;
+      descRow.appendChild(descText);
+      if (wasEdited) {
+        const dot = document.createElement("span");
+        dot.className = "tx-edited";
+        dot.title = "Editado";
+        descRow.appendChild(dot);
+      }
+      body.appendChild(descRow);
+
+      const meta = document.createElement("div");
+      meta.className = "tx-meta";
+      const parts = [typeLabel[t.type] || t.type];
+      if (t.paidBy) parts.push(t.paidBy);
+      if (t.recipient) parts.push("→ " + t.recipient);
+      if (t.category) parts.push(t.category);
+      if (t.paymentMethod) parts.push(t.paymentMethod);
+      if (!canEdit && t.loggedByEmail !== myEmail) parts.push("(" + (t.loggedBy || "?") + ")");
+      meta.textContent = parts.join(" · ");
+      body.appendChild(meta);
+      item.appendChild(body);
+
+      // Amount
+      const amtEl = document.createElement("div");
+      amtEl.className = "tx-amount " + t.type;
+      amtEl.textContent = fmt(parseFloat(t.amount||0));
+      item.appendChild(amtEl);
+
+      // Action buttons
+      const actions = document.createElement("div");
+      actions.className = "tx-actions";
+
+      // History button — always visible
+      const histBtn = document.createElement("button");
+      histBtn.className = "tx-btn";
+      histBtn.title = "Ver historial";
+      histBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+      histBtn.addEventListener("click", () => showActivityLog(t.id));
+      actions.appendChild(histBtn);
+
+      // Edit button
+      const editBtn = document.createElement("button");
+      editBtn.className = "tx-btn" + (canEdit ? "" : " disabled");
+      editBtn.title = canEdit ? "Editar" : "Sin permiso";
+      editBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+      if (canEdit) editBtn.addEventListener("click", () => editTransaction(t.id));
+      actions.appendChild(editBtn);
+
+      // Delete button
+      const delBtn = document.createElement("button");
+      delBtn.className = "tx-btn" + (canEdit ? "" : " disabled");
+      delBtn.title = canEdit ? "Eliminar" : "Sin permiso";
+      delBtn.textContent = "×";
+      delBtn.style.fontSize = "1.1rem";
+      if (canEdit) delBtn.addEventListener("click", () => deleteTransaction(t.id));
+      actions.appendChild(delBtn);
+
+      item.appendChild(actions);
+      listDiv.appendChild(item);
+    });
+  });
+
+  if (hasMore) {
+    const more = document.createElement("div");
+    more.style.cssText = "text-align:center;padding:16px;color:var(--muted);font-size:0.8rem;";
+    more.textContent = "Mostrando los últimos 20 movimientos. Usá los filtros para ver más.";
+    listDiv.appendChild(more);
+  }
+
+  // Return filterBar HTML + mount the DOM list after render
+  const placeholder = `<div id="tx-list-mount"></div>`;
+  requestAnimationFrame(() => {
+    const mount = document.getElementById("tx-list-mount");
+    if (mount) mount.replaceWith(listDiv);
+  });
+  return filterBar + placeholder;
 }
 
 // ════════════════════════════════════════════════════
@@ -1051,17 +1246,15 @@ function renderMovimientos() {
 function renderResumen() {
   const filterBar = renderFilterBar("resumenFilter", "setResumenFilter");
   const txs    = filterTxs(state.transactions, state.resumenFilter);
-  const allTxs = state.transactions; // always use ALL for current balances
+  const allTxs = state.transactions;
 
-  const { sib, mamaIngresos, mamaGastos, mamaBalance, totalIngresos, totalGastos, systemBalance } = computeBalances(txs);
-  const allBal = sortedBalances(allTxs); // real-time balances always from all txs
-  const rt = computeBalances(allTxs);    // real-time totals for estado actual
+  const { sib, mamaIngresos, mamaGastos, mamaBalance, totalIngresos, totalGastos } = computeBalances(txs);
+  const allBal = sortedBalances(allTxs);
+  const rt = computeBalances(allTxs);
 
-  // Filtered period stats
   const totalTransfers = txs.filter(t=>t.type==="transfer").reduce((s,t)=>s+parseFloat(t.amount||0),0);
   const totalExpHermanos = txs.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
 
-  // Category breakdown
   const byCat = {};
   txs.filter(t=>t.type==="expense"||t.type==="mother_expense").forEach(t=>{
     const cat = t.category || "Otros";
@@ -1071,7 +1264,6 @@ function renderResumen() {
   const catMax = Math.max(...Object.values(byCat),1);
   const totalAllExp = totalExpHermanos + txs.filter(t=>t.type==="mother_expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
 
-  // Spending by sibling (filtered period)
   const bySibSpent = {};
   CONFIG.SIBLINGS.forEach(s=>bySibSpent[s]=0);
   txs.filter(t=>t.type==="expense").forEach(t=>{
@@ -1079,11 +1271,9 @@ function renderResumen() {
   });
   const sibSpentMax = Math.max(...Object.values(bySibSpent),1);
 
-  // Aportes per sibling (filtered period)
   const aportesEntries = CONFIG.SIBLINGS
     .map(s=>({ name:s, val: sib[s]?.aportes||0 }))
-    .filter(x=>x.val>0)
-    .sort((a,b)=>b.val-a.val);
+    .filter(x=>x.val>0).sort((a,b)=>b.val-a.val);
   const aportesMax = Math.max(...aportesEntries.map(x=>x.val),1);
 
   const donut = buildDonut(catEntries, totalAllExp);
@@ -1195,17 +1385,19 @@ function renderResumen() {
       </div>
     </div>`;
 }
-// ── Tutorial ──────────────────────────────────────────────
+
+// ── Tutorial ───────────────────────────────────────────────
 function renderTutorial() {
   const steps = [
     { icon:"💰", title:"Gastos", desc:"Registrá gastos pagados por los hermanos o directamente de la cuenta de mamá." },
     { icon:"📤", title:"Ingresos y transferencias", desc:"Registrá cuando mamá transfiere plata a un hermano, o cuando entra un ingreso." },
-    { icon:"📋", title:"Historial", desc:"Ve todos los movimientos. Filtrá por fecha, categoría o persona." },
+    { icon:"📋", title:"Historial", desc:"Ve todos los movimientos. Filtrá por fecha, categoría o persona. Editá o eliminá solo tus propios registros." },
+    { icon:"🕐", title:"Historial de cambios", desc:"Cada transacción tiene un log de cambios. Tocá el ícono de reloj para ver quién editó qué y cuándo." },
     { icon:"📊", title:"Resumen", desc:"Estado actual de la cuenta de mamá y el saldo de cada hermano en tiempo real." },
     { icon:"✨", title:"Entrada con IA", desc:'Escribí en lenguaje natural: "Mery pagó 15000 en el super ayer" y la IA completa el formulario.' },
   ];
   return `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.95);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:360px;width:100%;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:360px;width:100%;max-height:90vh;overflow-y:auto;">
       <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;margin-bottom:4px;">Bienvenido a</div>
       <div style="font-family:'DM Serif Display',serif;font-size:1.8rem;color:var(--mother);margin-bottom:20px;font-style:italic;">MamaFund</div>
       <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:24px;">
@@ -1222,12 +1414,9 @@ function renderTutorial() {
     </div>
   </div>`;
 }
-window.closeTutorial = () => {
-  localStorage.setItem("mf_tutorial_seen", "1");
-  setState({ showTutorial: false });
-};
+window.closeTutorial = () => { localStorage.setItem("mf_tutorial_seen","1"); setState({ showTutorial: false }); };
 
-// ── SVG donut chart ────────────────────────────────────
+// ── SVG donut chart ────────────────────────────────────────
 function buildDonut(entries, total) {
   if (!total) return "";
   const r = 40, cx = 50, cy = 50, stroke = 14;
@@ -1254,7 +1443,54 @@ function buildDonut(entries, total) {
   </svg>`;
 }
 
-// ── Events ─────────────────────────────────────────────
+// ── Image compression ──────────────────────────────────────
+function compressImage(file, maxPx=800, quality=0.6) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
+    };
+    img.src = url;
+  });
+}
+
+window.sendAIPhoto = async (file) => {
+  setState({ aiLoading: true, aiResult: null, aiText: "📷 Analizando foto del ticket..." });
+  try {
+    const base64 = await compressImage(file);
+    const body = new URLSearchParams({ action: "parseImageWithAI", token: state.idToken, imageBase64: base64, mimeType: "image/jpeg" });
+    const r = await fetch(CONFIG.APPS_SCRIPT_URL, { method: "POST", redirect: "follow", body });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    const parsed = d.data;
+    if (parsed.type === "expense" || parsed.type === "mother_expense") {
+      const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
+      setState({
+        aiLoading: false, aiResult: parsed, aiText: "", tab: "gastos",
+        expForm: { ...state.expForm, subtype: parsed.type || "expense", amount: parsed.amount ? String(parsed.amount) : "",
+          description: parsed.description || "", category: cat, paidBy: parsed.paidBy || state.expForm.paidBy,
+          paymentMethod: parsed.paymentMethod || "Cuenta", date: parsed.date || today() }
+      });
+    } else {
+      setState({
+        aiLoading: false, aiResult: parsed, aiText: "", tab: "ingresos",
+        incForm: { ...state.incForm, subtype: parsed.type || "income", amount: parsed.amount ? String(parsed.amount) : "",
+          description: parsed.description || "", source: parsed.source || state.incForm.source, date: parsed.date || today() }
+      });
+    }
+  } catch(e) {
+    setState({ aiLoading: false, aiText: "", aiResult: { interpretation: "No pude leer la foto. Intentá con mejor iluminación o completá manualmente.", confidence: "low" } });
+  }
+};
+
+// ── Events ─────────────────────────────────────────────────
 function attachEvents() {
   document.querySelectorAll("[data-tab]").forEach(btn =>
     btn.addEventListener("click", () => setState({ tab: btn.dataset.tab }))
@@ -1265,12 +1501,7 @@ function attachEvents() {
   document.querySelectorAll("[data-subtype][data-form='inc']").forEach(btn =>
     btn.addEventListener("click", () => setState({ incForm: { ...state.incForm, subtype: btn.dataset.subtype } }))
   );
-  document.querySelectorAll("[data-del]").forEach(btn =>
-    btn.addEventListener("click", () => deleteTransaction(btn.dataset.del))
-  );
-  document.querySelectorAll("[data-edit]").forEach(btn =>
-    btn.addEventListener("click", () => editTransaction(btn.dataset.edit, btn.dataset.tx))
-  );
+
   const se = (id, cb) => { const el=document.getElementById(id); if(el) el.addEventListener("input",cb); };
   se("ef-date", e=>{
     state.expForm.date = e.target.value;
@@ -1293,6 +1524,7 @@ function attachEvents() {
   se("if-recipient", e=>{state.incForm.recipient=e.target.value;});
   se("if-desc",      e=>{state.incForm.description=e.target.value;});
   se("ai-text",      e=>{state.aiText=e.target.value;});
+
   const photoInput = document.getElementById("ai-photo-input");
   if (photoInput) photoInput.addEventListener("change", e => {
     const file = e.target.files?.[0];
@@ -1300,96 +1532,22 @@ function attachEvents() {
   });
 }
 
-// Compress image using canvas before sending
-function compressImage(file, maxPx=800, quality=0.6) {
-  return new Promise(resolve => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
-    };
-    img.src = url;
-  });
-}
-
-window.sendAIPhoto = async (file) => {
-  setState({ aiLoading: true, aiResult: null, aiText: "📷 Analizando foto del ticket..." });
-  try {
-    const base64 = await compressImage(file);
-    // Use form-encoded POST — avoids CORS preflight unlike JSON POST
-    const body = new URLSearchParams({
-      action: "parseImageWithAI",
-      token: state.idToken,
-      imageBase64: base64,
-      mimeType: "image/jpeg",
-    });
-    const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
-      method: "POST",
-      redirect: "follow",
-      body: body,
-    });
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.error);
-    const parsed = d.data;
-
-    if (parsed.type === "expense" || parsed.type === "mother_expense") {
-      const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
-      setState({
-        aiLoading: false, aiResult: parsed, aiText: "",
-        tab: "gastos",
-        expForm: {
-          ...state.expForm,
-          subtype: parsed.type || "expense",
-          amount: parsed.amount ? String(parsed.amount) : "",
-          description: parsed.description || "",
-          category: cat,
-          paidBy: parsed.paidBy || state.expForm.paidBy,
-          paymentMethod: parsed.paymentMethod || "Cuenta",
-          date: parsed.date || today(),
-        }
-      });
-    } else {
-      setState({
-        aiLoading: false, aiResult: parsed, aiText: "",
-        tab: "ingresos",
-        incForm: {
-          ...state.incForm,
-          subtype: parsed.type || "income",
-          amount: parsed.amount ? String(parsed.amount) : "",
-          description: parsed.description || "",
-          source: parsed.source || state.incForm.source,
-          date: parsed.date || today(),
-        }
-      });
-    }
-  } catch(e) {
-    console.error("Photo AI error:", e);
-    setState({ aiLoading: false, aiText: "", aiResult: { interpretation: "No pude leer la foto. Intentá con mejor iluminación o completá manualmente.", confidence: "low" } });
-  }
-};
-
+// ── Globals ────────────────────────────────────────────────
 window.sendAI = () => {
   const text = document.getElementById("ai-text")?.value || state.aiText;
   if (!text.trim()) return;
   state.aiText = text;
   parseWithGemini(text);
 };
-window.submitExpense = submitExpense;
-window.fmtDateDisplay = fmtDateDisplay;
-window.submitIncome  = submitIncome;
-window.changeMonth   = m => { setState({ selectedMonth: m }); loadTransactions(); };
-window.setHistorialFilter = f => setState({ historialFilter: f });
-window.setCategoryFilter   = f => setState({ categoryFilter: f });
-window.setSibFilter        = f => setState({ sibFilter: f });
-window.setResumenFilter   = f => setState({ resumenFilter: f });
-window.signOut       = () => { window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
+window.submitExpense        = submitExpense;
+window.submitIncome         = submitIncome;
+window.fmtDateDisplay       = fmtDateDisplay;
+window.setHistorialFilter   = f => setState({ historialFilter: f });
+window.setCategoryFilter    = f => setState({ categoryFilter: f });
+window.setSibFilter         = f => setState({ sibFilter: f });
+window.setResumenFilter     = f => setState({ resumenFilter: f });
+window.setState             = setState;
+window.signOut              = () => { window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
 
 render();
 </script>
