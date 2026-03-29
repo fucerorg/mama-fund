@@ -185,6 +185,8 @@ const CONFIG = {
   },
 };
 
+const APP_VERSION = "v1.0.0";
+
 function today() {
   const d = new Date();
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -865,6 +867,7 @@ function renderAuth() {
       <div class="auth-card">
         <p>Iniciá sesión con tu cuenta</p>
         <div id="g-signin-btn" style="display:flex;justify-content:center;margin-top:8px;"></div>
+        <div style="margin-top:16px;font-size:0.7rem;color:var(--muted);">${APP_VERSION}</div>
       </div>
     </div>
     <div id="toast" class="toast"></div>`;
@@ -1417,6 +1420,7 @@ function renderTutorial() {
           </div>`).join("")}
       </div>
       <button onclick="closeTutorial()" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;">¡Entendido, empecemos!</button>
+      <div style="text-align:center;margin-top:14px;font-size:0.7rem;color:var(--muted);">${APP_VERSION}</div>
     </div>
   </div>`;
 }
