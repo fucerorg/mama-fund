@@ -801,7 +801,7 @@ function renderAIBox() {
         <input id="ai-text" type="text" placeholder="${AI_PLACEHOLDERS[aiPlaceholderIdx % AI_PLACEHOLDERS.length]}"
           style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:0.85rem;"
           value="${state.aiText}" onkeydown="if(event.key==='Enter')sendAI()">
-        <input id="ai-photo-input" type="file" accept="image/*" capture="environment" style="display:none;">
+        <input id="ai-photo-input" type="file" accept="image/*" style="display:none;">
         <button onclick="document.getElementById('ai-photo-input').click()" ${state.aiLoading?"disabled":""} 
           title="Foto de ticket"
           style="background:var(--surface2);border:1px solid rgba(196,181,253,0.25);border-radius:10px;padding:9px 10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:42px;height:42px;">
@@ -1323,13 +1323,17 @@ window.sendAIPhoto = async (file) => {
   setState({ aiLoading: true, aiResult: null, aiText: "📷 Analizando foto del ticket..." });
   try {
     const base64 = await compressImage(file);
-    const q = new URLSearchParams({
-      action: "parseImageWithAI",
-      token: state.idToken,
-      imageBase64: base64,
-      mimeType: "image/jpeg",
+    const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "parseImageWithAI",
+        token: state.idToken,
+        imageBase64: base64,
+        mimeType: "image/jpeg",
+      }),
     });
-    const r = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${q}`, { redirect: "follow" });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error);
     const parsed = d.data;
