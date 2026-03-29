@@ -236,12 +236,22 @@ function canEditTx(tx) {
 }
 
 // ── API ────────────────────────────────────────────────────
+function handleApiResponse(d) {
+  if (!d.ok) {
+    if (d.code === 401) {
+      window.google?.accounts?.id?.disableAutoSelect();
+      setState({ user: null, idToken: null, transactions: [] });
+      throw new Error("Sesión expirada. Volvé a iniciar sesión.");
+    }
+    throw new Error(d.error);
+  }
+  return d.data;
+}
+
 async function apiGet(action, params={}) {
   const q = new URLSearchParams({ action, token: state.idToken, ...params });
   const r = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${q}`, { redirect: "follow" });
-  const d = await r.json();
-  if (!d.ok) throw new Error(d.error);
-  return d.data;
+  return handleApiResponse(await r.json());
 }
 
 async function apiPost(action, params={}) {
@@ -249,9 +259,7 @@ async function apiPost(action, params={}) {
   const r = await fetch(CONFIG.APPS_SCRIPT_URL, {
     method: "POST", redirect: "follow", body,
   });
-  const d = await r.json();
-  if (!d.ok) throw new Error(d.error);
-  return d.data;
+  return handleApiResponse(await r.json());
 }
 
 async function loadTransactions() {
@@ -275,11 +283,7 @@ async function loadTransactions() {
 async function parseWithGemini(text) {
   setState({ aiLoading: true, aiResult: null });
   try {
-    const q = new URLSearchParams({ action: "parseWithAI", token: state.idToken, text: encodeURIComponent(text) });
-    const r = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${q}`, { redirect: "follow" });
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.error);
-    const parsed = d.data;
+    const parsed = await apiPost("parseWithAI", { text: encodeURIComponent(text) });
 
     if (parsed.type === "expense" || parsed.type === "mother_expense") {
       const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
@@ -1194,13 +1198,15 @@ function renderMovimientos() {
       const actions = document.createElement("div");
       actions.className = "tx-actions";
 
-      // History button — always visible
-      const histBtn = document.createElement("button");
-      histBtn.className = "tx-btn";
-      histBtn.title = "Ver historial";
-      histBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-      histBtn.addEventListener("click", () => showActivityLog(t.id));
-      actions.appendChild(histBtn);
+      // History button: only for owner or admin (avoids exposing backend ownership bug)
+      if (canEdit) {
+        const histBtn = document.createElement("button");
+        histBtn.className = "tx-btn";
+        histBtn.title = "Ver historial de cambios";
+        histBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+        histBtn.addEventListener("click", () => showActivityLog(t.id));
+        actions.appendChild(histBtn);
+      }
 
       // Edit button
       const editBtn = document.createElement("button");
@@ -1528,7 +1534,10 @@ function attachEvents() {
   const photoInput = document.getElementById("ai-photo-input");
   if (photoInput) photoInput.addEventListener("change", e => {
     const file = e.target.files?.[0];
-    if (file) sendAIPhoto(file);
+    if (file) {
+      sendAIPhoto(file);
+      e.target.value = "";  // reset so same file can be selected again
+    }
   });
 }
 
