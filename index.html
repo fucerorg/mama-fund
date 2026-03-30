@@ -41,10 +41,10 @@
   .topbar-title { font-family: 'DM Serif Display', serif; font-size: 1.3rem; display: flex; align-items: center; gap: 8px; }
   .topbar-title span { color: var(--mother); font-style: italic; }
   .topbar-user { font-size: 0.75rem; color: var(--muted); text-align: right; }
-  .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 80px); min-height: 0; }
+  .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(var(--safe-bot-px, env(safe-area-inset-bottom, 0px)) + 80px); min-height: 0; }
 
   /* ── Bottom nav ── */
-  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0 calc(10px + var(--safe-bot-px, env(safe-area-inset-bottom, 0px))); background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
   .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: var(--muted); font-size: 0.6rem; cursor: pointer; padding: 4px; transition: color .2s; }
   .nav-btn.active { color: var(--mother); }
   .nav-btn svg { width: 22px; height: 22px; }
@@ -180,7 +180,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.0";
+const APP_VERSION = "v1.1.1";
 
 function today() {
   const d = new Date();
@@ -836,7 +836,21 @@ function formatMonth(m) {
 }
 
 // ── Render ─────────────────────────────────────────────────
+function applySafeAreaFix() {
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;bottom:0;left:0;width:1px;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none;";
+  document.body.appendChild(probe);
+  const h = probe.offsetHeight;
+  document.body.removeChild(probe);
+  if (h > 0) {
+    document.documentElement.style.setProperty("--safe-bot-px", h + "px");
+  } else {
+    document.documentElement.style.setProperty("--safe-bot-px", "0px");
+  }
+}
+
 function render() {
+  applySafeAreaFix();
   const root = document.getElementById("root");
   if (!state.user) { root.innerHTML = renderAuth(); scheduleGoogleInit(); return; }
   root.innerHTML = `
@@ -989,13 +1003,13 @@ function renderGastos() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Categoría</label>
-          <select class="form-control" id="ef-cat" style="height:44px;">
+          <select class="form-control" id="ef-cat">
             ${CONFIG.CATEGORIES.map(c=>`<option value="${c}" ${f.category===c?"selected":""}>${c}</option>`).join("")}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Descripción (opcional)</label>
-          <input class="form-control" style="height:44px;" id="ef-desc" type="text" placeholder="¿En qué?" value="${f.description||""}">
+          <input class="form-control" id="ef-desc" type="text" placeholder="¿En qué?" value="${f.description||""}">
         </div>
       </div>
       ${isMother ? `
@@ -1048,7 +1062,7 @@ function renderIngresos() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">De</label>
-          <select class="form-control" style="height:44px;" id="if-from">
+          <select class="form-control" id="if-from">
             ${senders.map(s=>`<option value="${s}" ${f.from===s?"selected":""}>${s}</option>`).join("")}
           </select>
         </div>
@@ -1063,7 +1077,7 @@ function renderIngresos() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Fuente</label>
-          <select class="form-control" style="height:44px;" id="if-source">
+          <select class="form-control" id="if-source">
             ${CONFIG.INCOME_SOURCES.map(s=>{
               const icon = s.includes("Jubilación")?"💵":s.includes("Alquiler")?"🏠":s.includes("Aporte")?"🤝":"💶";
               return `<option value="${s}" ${f.source===s?"selected":""}>${icon} ${s}</option>`;
@@ -1110,7 +1124,7 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
       <select onchange="setCategoryFilter(this.value)" style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
         <option value="all" ${state.categoryFilter==="all"?"selected":""}>🏷️ Categoría</option>
         <optgroup label="Gastos">${CONFIG.CATEGORIES.map(c=>`<option value="${c.replace(/^[^\s]+\s/,"")}" ${state.categoryFilter===c.replace(/^[^\s]+\s/,"")?"selected":""}>${c}</option>`).join("")}</optgroup>
-        <optgroup label="Movimientos"><option value="__income__" ${state.categoryFilter==="__income__"?"selected":""}>📥 Ingresos</option><option value="__transfer__" ${state.categoryFilter==="__transfer__"?"selected":""}>📤 Transferencias</option></optgroup>
+        <optgroup label="Ingresos"><option value="__jubilacion__" ${state.categoryFilter==="__jubilacion__"?"selected":""}>💵 Jubilación</option><option value="__alquiler__" ${state.categoryFilter==="__alquiler__"?"selected":""}>🏠 Alquiler</option><option value="__aportes__" ${state.categoryFilter==="__aportes__"?"selected":""}>🤝 Aportes</option><option value="__income__" ${state.categoryFilter==="__income__"?"selected":""}>💰 Otros ingresos</option></optgroup><optgroup label="Transferencias"><option value="__transfer__" ${state.categoryFilter==="__transfer__"?"selected":""}>📤 Transferencias</option></optgroup>
       </select>` : ""}
       ${showSib ? `
       <select onchange="setSibFilter(this.value)" style="flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:0.82rem;">
@@ -1123,8 +1137,11 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
 
 function renderMovimientos() {
   let txs = filterTxs(state.transactions, state.historialFilter);
-  if (state.categoryFilter === "__income__") txs = txs.filter(t => t.type === "income");
-  else if (state.categoryFilter === "__transfer__") txs = txs.filter(t => t.type === "transfer");
+  if (state.categoryFilter === "__transfer__") txs = txs.filter(t => t.type === "transfer");
+  else if (state.categoryFilter === "__jubilacion__") txs = txs.filter(t => t.type === "income" && (t.description||"").toLowerCase().includes("jubilaci"));
+  else if (state.categoryFilter === "__alquiler__") txs = txs.filter(t => t.type === "income" && (t.description||"").toLowerCase().includes("alquiler"));
+  else if (state.categoryFilter === "__aportes__") txs = txs.filter(t => t.type === "income" && (t.description||"").toLowerCase().includes("aporte"));
+  else if (state.categoryFilter === "__income__") txs = txs.filter(t => t.type === "income");
   else if (state.categoryFilter !== "all") txs = txs.filter(t => (t.category||"") === state.categoryFilter);
   if (state.sibFilter !== "all") {
     const s = state.sibFilter;
