@@ -180,7 +180,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.2";
+const APP_VERSION = "v1.1.3";
 
 function today() {
   const d = new Date();
@@ -837,31 +837,31 @@ function formatMonth(m) {
 
 // ── Render ─────────────────────────────────────────────────
 function applySafeAreaFix() {
-  // En iOS PWA, env(safe-area-inset-bottom) puede no resolverse bien en JS.
-  // Calculamos el gap entre la pantalla física y el viewport visible.
-  const screenH = window.screen.height;
-  const vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  // En PWA el viewport ocupa toda la pantalla menos la barra de status y el home indicator.
-  // La diferencia entre screen.height y visualViewport.height incluye ambas barras.
-  // Usamos un mínimo de 20px para dispositivos con home indicator conocidos.
+  // Solo aplicar fix manual en modo PWA (standalone).
+  // En browser, env() en CSS se maneja solo sin intervención de JS.
+  const isPWA = window.navigator.standalone === true;
+  if (!isPWA) return;
+
   let safeBot = 0;
+
+  // Intento 1: leer env() via computed style del DOM
   try {
-    // Intento 1: leer del computed style (funciona en algunos contextos)
     const tmp = document.createElement("div");
     tmp.style.cssText = "position:fixed;bottom:0;left:0;width:0;height:env(safe-area-inset-bottom,0px);";
     document.documentElement.appendChild(tmp);
     safeBot = tmp.getBoundingClientRect().height;
     document.documentElement.removeChild(tmp);
   } catch(_) {}
-  // Intento 2: si el computed value no funcionó, inferir del viewport
+
+  // Intento 2: inferir del gap entre screen y visualViewport
   if (safeBot === 0 && window.visualViewport) {
-    const gap = screenH - (window.visualViewport.height + window.visualViewport.offsetTop);
+    const gap = window.screen.height - window.visualViewport.height - window.visualViewport.offsetTop;
     if (gap > 0 && gap < 100) safeBot = gap;
   }
-  // Fallback para iPhone con home indicator (34px es el valor estándar)
-  if (safeBot === 0 && /iPhone/.test(navigator.userAgent) && screenH >= 812) {
-    safeBot = 34;
-  }
+
+  // Fallback: 34px es el valor estándar del home indicator en iPhones sin botón físico
+  if (safeBot === 0) safeBot = 34;
+
   document.documentElement.style.setProperty("--safe-bot-px", safeBot + "px");
 }
 
