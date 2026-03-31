@@ -180,7 +180,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.1";
+const APP_VERSION = "v1.1.2";
 
 function today() {
   const d = new Date();
@@ -837,16 +837,32 @@ function formatMonth(m) {
 
 // ── Render ─────────────────────────────────────────────────
 function applySafeAreaFix() {
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:fixed;bottom:0;left:0;width:1px;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none;";
-  document.body.appendChild(probe);
-  const h = probe.offsetHeight;
-  document.body.removeChild(probe);
-  if (h > 0) {
-    document.documentElement.style.setProperty("--safe-bot-px", h + "px");
-  } else {
-    document.documentElement.style.setProperty("--safe-bot-px", "0px");
+  // En iOS PWA, env(safe-area-inset-bottom) puede no resolverse bien en JS.
+  // Calculamos el gap entre la pantalla física y el viewport visible.
+  const screenH = window.screen.height;
+  const vvH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  // En PWA el viewport ocupa toda la pantalla menos la barra de status y el home indicator.
+  // La diferencia entre screen.height y visualViewport.height incluye ambas barras.
+  // Usamos un mínimo de 20px para dispositivos con home indicator conocidos.
+  let safeBot = 0;
+  try {
+    // Intento 1: leer del computed style (funciona en algunos contextos)
+    const tmp = document.createElement("div");
+    tmp.style.cssText = "position:fixed;bottom:0;left:0;width:0;height:env(safe-area-inset-bottom,0px);";
+    document.documentElement.appendChild(tmp);
+    safeBot = tmp.getBoundingClientRect().height;
+    document.documentElement.removeChild(tmp);
+  } catch(_) {}
+  // Intento 2: si el computed value no funcionó, inferir del viewport
+  if (safeBot === 0 && window.visualViewport) {
+    const gap = screenH - (window.visualViewport.height + window.visualViewport.offsetTop);
+    if (gap > 0 && gap < 100) safeBot = gap;
   }
+  // Fallback para iPhone con home indicator (34px es el valor estándar)
+  if (safeBot === 0 && /iPhone/.test(navigator.userAgent) && screenH >= 812) {
+    safeBot = 34;
+  }
+  document.documentElement.style.setProperty("--safe-bot-px", safeBot + "px");
 }
 
 function render() {
@@ -1003,13 +1019,13 @@ function renderGastos() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Categoría</label>
-          <select class="form-control" id="ef-cat">
+          <select class="form-control" style="height:48px;" id="ef-cat">
             ${CONFIG.CATEGORIES.map(c=>`<option value="${c}" ${f.category===c?"selected":""}>${c}</option>`).join("")}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Descripción (opcional)</label>
-          <input class="form-control" id="ef-desc" type="text" placeholder="¿En qué?" value="${f.description||""}">
+          <input class="form-control" style="height:48px;" id="ef-desc" type="text" placeholder="¿En qué?" value="${f.description||""}">
         </div>
       </div>
       ${isMother ? `
@@ -1062,13 +1078,13 @@ function renderIngresos() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">De</label>
-          <select class="form-control" id="if-from">
+          <select class="form-control" style="height:48px;" id="if-from">
             ${senders.map(s=>`<option value="${s}" ${f.from===s?"selected":""}>${s}</option>`).join("")}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Para</label>
-          <select class="form-control" id="if-recipient">
+          <select class="form-control" style="height:48px;" id="if-recipient">
             <option value="">— Seleccionar —</option>
             ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s}</option>`).join("")}
           </select>
@@ -1077,7 +1093,7 @@ function renderIngresos() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Fuente</label>
-          <select class="form-control" id="if-source">
+          <select class="form-control" style="height:48px;" id="if-source">
             ${CONFIG.INCOME_SOURCES.map(s=>{
               const icon = s.includes("Jubilación")?"💵":s.includes("Alquiler")?"🏠":s.includes("Aporte")?"🤝":"💶";
               return `<option value="${s}" ${f.source===s?"selected":""}>${icon} ${s}</option>`;
@@ -1086,7 +1102,7 @@ function renderIngresos() {
         </div>
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Ingresó a</label>
-          <select class="form-control" id="if-recipient">
+          <select class="form-control" style="height:48px;" id="if-recipient">
             <option value="Mamá" ${(f.recipient==="Mamá"||!f.recipient)?"selected":""}>Mamá</option>
             ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s}</option>`).join("")}
           </select>
