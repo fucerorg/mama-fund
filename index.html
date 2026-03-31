@@ -185,7 +185,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.9";
+const APP_VERSION = "v1.1.10";
 
 function today() {
   const d = new Date();
@@ -850,6 +850,7 @@ function render() {
       <div class="content">${renderTab()}</div>
       ${renderBottomNav()}
     </div>
+    <div style="position:fixed;bottom:0;left:0;right:0;height:env(safe-area-inset-bottom,0px);background:var(--surface);z-index:99;"></div>
     ${state.showTutorial ? renderTutorial() : ""}
     <div id="toast" class="toast"></div>
     ${state.loading ? `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:998;gap:16px;">
