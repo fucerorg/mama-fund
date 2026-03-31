@@ -44,7 +44,7 @@
   .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 80px); min-height: 0; }
 
   /* ── Bottom nav ── */
-  .bottom-nav { position: fixed; bottom: env(safe-area-inset-bottom, 0px); left: 0; right: 0; padding: 10px 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; z-index: 100; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
   .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: var(--muted); font-size: 0.6rem; cursor: pointer; padding: 4px; transition: color .2s; }
   .nav-btn.active { color: var(--mother); }
   .nav-btn svg { width: 22px; height: 22px; }
@@ -165,7 +165,6 @@
 </head>
 <body>
 <div id="root"></div>
-<div id="safe-area-spacer" style="position:fixed;bottom:0;left:0;right:0;height:env(safe-area-inset-bottom,0px);background:var(--surface);z-index:99;pointer-events:none;"></div>
 <script type="module">
 
 // ════════════════════════════════════════════════════
@@ -181,7 +180,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.13";
+const APP_VERSION = "v1.1.14";
 
 function today() {
   const d = new Date();
