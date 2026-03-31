@@ -24,8 +24,8 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bot: env(safe-area-inset-bottom, 0px);
   }
-  html { height: -webkit-fill-available; }
-  body { height: 100%; min-height: -webkit-fill-available; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; overflow: hidden; }
+  html { height: -webkit-fill-available; background: var(--surface); }
+  body { height: 100%; min-height: -webkit-fill-available; background: var(--surface); color: var(--text); font-family: 'DM Sans', sans-serif; overflow: hidden; }
   #root { height: 100%; min-height: -webkit-fill-available; display: flex; flex-direction: column; }
 
   /* ── Auth ── */
@@ -36,7 +36,7 @@
   .auth-card p { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
 
   /* ── Layout ── */
-  .app { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .app { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
   .topbar { padding: calc(var(--safe-top) + 12px) 20px 12px; display: flex; align-items: center; justify-content: space-between; background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .topbar-title { font-family: 'DM Serif Display', serif; font-size: 1.3rem; display: flex; align-items: center; gap: 8px; }
   .topbar-title span { color: var(--mother); font-style: italic; }
@@ -44,7 +44,7 @@
   .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 80px); min-height: 0; }
 
   /* ── Bottom nav ── */
-  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; z-index: 100; }
   .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: var(--muted); font-size: 0.6rem; cursor: pointer; padding: 4px; transition: color .2s; }
   .nav-btn.active { color: var(--mother); }
   .nav-btn svg { width: 22px; height: 22px; }
@@ -180,7 +180,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.14";
+const APP_VERSION = "v1.1.15";
 
 function today() {
   const d = new Date();
