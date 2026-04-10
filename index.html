@@ -181,7 +181,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.16";
+const APP_VERSION = "v1.1.17";
 
 function today() {
   const d = new Date();
@@ -193,6 +193,7 @@ function catShort(c) { return c.replace(/^[^\s]+\s/,""); }
 // ── State ──────────────────────────────────────────────────
 let state = {
   user: null, idToken: null,
+  authLoading: false,
   tab: "gastos",
   transactions: [],
   loading: false,
@@ -239,6 +240,7 @@ function canEditTx(tx) {
 function handleApiResponse(d) {
   if (!d.ok) {
     if (d.code === 401) {
+      localStorage.removeItem("mf_token");
       window.google?.accounts?.id?.disableAutoSelect();
       setState({ user: null, idToken: null, transactions: [] });
       throw new Error("Sesión expirada. Volvé a iniciar sesión.");
@@ -723,9 +725,13 @@ function initGoogleSignIn() {
     callback: async (response) => {
       // Guardar token temporalmente para poder llamar action=me
       state.idToken = response.credential;
+      state.authLoading = true;
+      render();
       try {
         const profile = await apiGet("me");
+        localStorage.setItem("mf_token", response.credential);
         setState({
+          authLoading: false,
           user: {
             name:      profile.name,
             firstName: profile.appName,
@@ -739,6 +745,7 @@ function initGoogleSignIn() {
         if (!localStorage.getItem("mf_tutorial_seen")) setTimeout(() => setState({ showTutorial: true }), 1000);
       } catch(e) {
         state.idToken = null;
+        state.authLoading = false;
         showToast("Error al iniciar sesión. Verificá tu acceso.", true);
         render();
       }
@@ -868,6 +875,16 @@ function scheduleGoogleInit() {
 }
 
 function renderAuth() {
+  if (state.authLoading) return `
+    <div class="auth-screen">
+      <img src="logo.png" style="width:100px;height:100px;margin-bottom:16px;border-radius:16px;" alt="Mama Fund">
+      <div class="auth-logo">Mama<span>Fund</span></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:24px;">
+        <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
+        <div style="color:var(--muted);font-size:0.85rem;">Iniciando sesión...</div>
+      </div>
+    </div>
+    <div id="toast" class="toast"></div>`;
   return `
     <div class="auth-screen">
       <img src="logo.png" style="width:100px;height:100px;margin-bottom:16px;border-radius:16px;" alt="Mama Fund">
@@ -1578,9 +1595,39 @@ window.setCategoryFilter    = f => setState({ categoryFilter: f, historialPage: 
 window.setSibFilter         = f => setState({ sibFilter: f, historialPage: 1 });
 window.setResumenFilter     = f => setState({ resumenFilter: f });
 window.setState             = setState;
-window.signOut              = () => { window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
+window.signOut = () => { localStorage.removeItem("mf_token"); window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
 
-render();
+async function init() {
+  const saved = localStorage.getItem("mf_token");
+  if (saved) {
+    state.idToken = saved;
+    state.authLoading = true;
+    render();
+    try {
+      const profile = await apiGet("me");
+      setState({
+        authLoading: false,
+        user: {
+          name:      profile.name,
+          firstName: profile.appName,
+          email:     profile.email,
+          isAdmin:   profile.isAdmin,
+        },
+        idToken: saved,
+        expForm: { ...state.expForm, paidBy: profile.appName },
+      });
+      loadTransactions();
+      return;
+    } catch(e) {
+      localStorage.removeItem("mf_token");
+      state.idToken = null;
+      state.authLoading = false;
+    }
+  }
+  render();
+}
+
+init();
 
 
 </script>
