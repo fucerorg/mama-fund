@@ -181,7 +181,7 @@ const CONFIG = {
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
 };
 
-const APP_VERSION = "v1.1.17";
+const APP_VERSION = "v1.1.18";
 
 function today() {
   const d = new Date();
@@ -189,6 +189,22 @@ function today() {
   return local.toISOString().slice(0,10);
 }
 function catShort(c) { return c.replace(/^[^\s]+\s/,""); }
+
+// ── Category heuristic ─────────────────────────────────────
+function inferCategory(desc) {
+  if (!desc) return null;
+  const t = desc.toLowerCase();
+  const rules = [
+    { cat: "🏥 Médico",       keys: ["farmacia", "medic", "médic", "doctor", "turno", "clínica", "clinica", "hospital", "salud", "remedios", "pastillas", "análisis", "analisis", "kinesi", "odonto", "dentista", "enferm"] },
+    { cat: "🛒 Supermercado", keys: ["super", "mercado", "carrefour", "coto", "disco", "jumbo", "verdulería", "verduleria", "frutería", "fruteria", "almacén", "almacen", "kiosco", "fiambrería", "fiambr", "despensa"] },
+    { cat: "💡 Servicios",    keys: ["luz", "gas", "agua", "telefon", "internet", "expensas", "alquiler", "cable", "edenor", "edesur", "metrogas", "aysa", "servicio"] },
+    { cat: "🍽️ Salidas",      keys: ["restaurante", "restaurant", "café", "cafe", "confitería", "confiteria", "delivery", "pizza", "sushi", "helado", "cine", "teatro", "paseo", "mcdonald", "burger"] },
+  ];
+  for (const { cat, keys } of rules) {
+    if (keys.some(k => t.includes(k))) return cat;
+  }
+  return null;
+}
 
 // ── State ──────────────────────────────────────────────────
 let state = {
@@ -1556,6 +1572,16 @@ function attachEvents() {
   se("ef-amount",   e=>{state.expForm.amount=e.target.value;});
   se("ef-cat",      e=>{state.expForm.category=e.target.value;});
   se("ef-desc",     e=>{state.expForm.description=e.target.value;});
+
+  const descEl = document.getElementById("ef-desc");
+  if (descEl) descEl.addEventListener("blur", () => {
+    const cat = inferCategory(state.expForm.description);
+    if (cat) {
+      state.expForm.category = cat;
+      const sel = document.getElementById("ef-cat");
+      if (sel) sel.value = cat;
+    }
+  });
   se("ef-paidby",   e=>{state.expForm.paidBy=e.target.value;});
   se("ef-payment",  e=>{state.expForm.paymentMethod=e.target.value;});
   se("if-date", e=>{
