@@ -195,7 +195,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.1";
+const APP_VERSION = "v1.2.2";
 
 function today() {
   const d = new Date();
@@ -241,6 +241,7 @@ let state = {
   },
   aiText: "",
   showTutorial: false,
+  showPushPrompt: false,
   aiLoading: false,
   aiResult: null,
   incForm: {
@@ -772,8 +773,10 @@ function initGoogleSignIn() {
           expForm: { ...state.expForm, paidBy: profile.appName },
         });
         loadTransactions();
-        registerPushNotifications();
+        // iOS forbids requesting notification permission without a user gesture,
+        // so we show a modal (with an "Activar" button) instead of auto-requesting.
         if (!localStorage.getItem("mf_tutorial_seen")) setTimeout(() => setState({ showTutorial: true }), 1000);
+        else setTimeout(maybePromptPush, 1000);
       } catch(e) {
         state.idToken = null;
         state.authLoading = false;
@@ -885,6 +888,7 @@ function render() {
       ${renderBottomNav()}
     </div>
     ${state.showTutorial ? renderTutorial() : ""}
+    ${state.showPushPrompt ? renderPushPrompt() : ""}
     <div id="toast" class="toast"></div>
     ${state.loading ? `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:998;gap:16px;">
       <div class="spinner" style="width:36px;height:36px;border-width:3px;"></div>
@@ -917,41 +921,81 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-// Called after a successful sign-in: request permission and register the
-// device's FCM token with the backend. Auto-subscribe, no consent UI (3
-// internal users). Fails quietly — push supplements email, never blocks.
-async function registerPushNotifications() {
-  try {
-    if (!("serviceWorker" in navigator) || !("Notification" in window) || !window.firebase) return false;
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return false;
-    const reg = _swRegistration || await navigator.serviceWorker.register("sw.js");
-    await navigator.serviceWorker.ready;
-    if (!firebase.apps.length) firebase.initializeApp(CONFIG.FIREBASE);
-    const token = await firebase.messaging().getToken({
-      vapidKey: CONFIG.FCM_VAPID_PUBLIC_KEY,
-      serviceWorkerRegistration: reg,
-    });
-    if (token) { await apiPost("registerPushToken", { fcmToken: token }); return true; }
-    return false;
-  } catch (e) {
-    console.warn("[push] registration failed", e);
-    return false;
-  }
+// True when the app runs as an installed PWA (required for Web Push on iOS).
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches
+      || window.navigator.standalone === true;
+}
+function isiOS() {
+  return /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+// Whether this browser/context can register for Web Push at all.
+function pushSupported() {
+  return "serviceWorker" in navigator
+      && "Notification" in window
+      && "PushManager" in window
+      && !!window.firebase;
 }
 
-// Tap-triggered enable — iOS requires a user gesture to show the permission
-// prompt, so the topbar bell calls this instead of relying on the auto-call.
-window.enablePush = async () => {
+// Request permission (MUST be called from a user gesture on iOS) and register
+// the device's FCM token with the backend. Throws with a descriptive message on
+// failure so the caller can show the real reason instead of a generic error.
+async function registerPushNotifications() {
+  if (!pushSupported()) {
+    throw new Error(isiOS() && !isStandalone()
+      ? "En iPhone: agregá la app a la pantalla de inicio y abrila desde ahí."
+      : "Este navegador no soporta notificaciones push.");
+  }
+  const permission = await Notification.requestPermission();
+  if (permission === "denied") {
+    throw new Error("Notificaciones bloqueadas. Activalas en los ajustes del navegador.");
+  }
+  if (permission !== "granted") {
+    throw new Error("Permiso de notificaciones no otorgado.");
+  }
+  const reg = _swRegistration || await navigator.serviceWorker.register("sw.js");
+  await navigator.serviceWorker.ready;
+  if (!firebase.apps.length) firebase.initializeApp(CONFIG.FIREBASE);
+  const token = await firebase.messaging().getToken({
+    vapidKey: CONFIG.FCM_VAPID_PUBLIC_KEY,
+    serviceWorkerRegistration: reg,
+  });
+  if (!token) throw new Error("FCM no devolvió un token.");
+  await apiPost("registerPushToken", { fcmToken: token });
+  return true;
+}
+
+// Show the consent modal on login when push is supported and the user hasn't
+// decided yet. Re-shows each login while permission is still "default" so an
+// undecided user keeps getting the chance to opt in.
+function maybePromptPush() {
   if (!("Notification" in window)) {
-    showToast("En iPhone: agregá la app a la pantalla de inicio y abrila desde ahí.", true);
+    // iOS Safari tab (not installed): can't push here. Prompt to install once.
+    if (isiOS() && !isStandalone() && !localStorage.getItem("mf_push_install_hint")) {
+      localStorage.setItem("mf_push_install_hint", "1");
+      setState({ showPushPrompt: true });
+    }
     return;
   }
-  const okPush = await registerPushNotifications();
-  if (okPush) { showToast("Notificaciones activadas 💜"); render(); }
-  else if (Notification.permission === "denied") showToast("Notificaciones bloqueadas. Activalas en los ajustes del navegador.", true);
-  else showToast("No se pudieron activar las notificaciones.", true);
+  if (!pushSupported()) return;
+  if (Notification.permission !== "default") return; // already granted or denied
+  setState({ showPushPrompt: true });
+}
+
+// Modal "Activar" button. Surfaces the real failure reason.
+window.activatePush = async () => {
+  try {
+    await registerPushNotifications();
+    setState({ showPushPrompt: false });
+    showToast("Notificaciones activadas 💜");
+  } catch (e) {
+    console.warn("[push] activation failed", e);
+    setState({ showPushPrompt: false });
+    showToast(e.message || "No se pudieron activar las notificaciones.", true);
+  }
 };
+window.dismissPushPrompt = () => setState({ showPushPrompt: false });
 
 function renderAuth() {
   if (state.authLoading) return `
@@ -988,9 +1032,6 @@ function renderTopbar() {
         Mama<span>Fund</span>
       </div>
       <div class="topbar-user" style="display:flex;align-items:center;gap:10px;">
-        ${("Notification" in window && Notification.permission !== "granted")
-          ? `<button onclick="enablePush()" title="Activar notificaciones" style="background:none;border:1px solid var(--border);color:var(--accent);border-radius:99px;width:22px;height:22px;font-size:0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">🔔</button>`
-          : ""}
         <button onclick="setState({showTutorial:true})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:99px;width:22px;height:22px;font-size:0.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">?</button>
         <div style="text-align:right;">${state.user.firstName}${adminBadge}<br><button onclick="signOut()" style="background:none;border:none;color:var(--muted);font-size:0.7rem;cursor:pointer;text-decoration:underline;">Salir</button></div>
       </div>
@@ -1541,7 +1582,29 @@ function renderTutorial() {
     </div>
   </div>`;
 }
-window.closeTutorial = () => { localStorage.setItem("mf_tutorial_seen","1"); setState({ showTutorial: false }); };
+window.closeTutorial = () => {
+  localStorage.setItem("mf_tutorial_seen","1");
+  setState({ showTutorial: false });
+  setTimeout(maybePromptPush, 400); // chain the push consent after onboarding
+};
+
+// Consent modal for enabling notifications (replaces the topbar bell). The
+// "Activar" tap is the user gesture iOS requires to show the real prompt.
+function renderPushPrompt() {
+  const needsInstall = isiOS() && !isStandalone();
+  const body = needsInstall
+    ? `Para recibir notificaciones en tu iPhone, agregá MamaFund a la pantalla de inicio: tocá el botón <strong>Compartir</strong> y elegí <strong>"Agregar a inicio"</strong>. Después abrila desde ahí.`
+    : `Recibí un aviso cuando mamá te transfiera plata o haya movimientos importantes. Podés cambiarlo cuando quieras.`;
+  return `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.95);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;max-width:340px;width:100%;text-align:center;">
+      <div style="font-size:2.4rem;margin-bottom:12px;">🔔</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--mother);margin-bottom:12px;">Activá las notificaciones</div>
+      <div style="font-size:0.85rem;color:var(--muted);line-height:1.5;margin-bottom:24px;">${body}</div>
+      ${needsInstall ? "" : `<button onclick="activatePush()" style="width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;margin-bottom:10px;">Activar notificaciones</button>`}
+      <button onclick="dismissPushPrompt()" style="width:100%;background:none;border:none;color:var(--muted);font-size:0.85rem;cursor:pointer;padding:8px;">${needsInstall ? "Entendido" : "Ahora no"}</button>
+    </div>
+  </div>`;
+}
 
 // ── SVG donut chart ────────────────────────────────────────
 function buildDonut(entries, total) {
@@ -1709,7 +1772,7 @@ async function init() {
         expForm: { ...state.expForm, paidBy: profile.appName },
       });
       loadTransactions();
-      registerPushNotifications();
+      setTimeout(maybePromptPush, 1000);
       return;
     } catch(e) {
       localStorage.removeItem("mf_token");
