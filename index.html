@@ -209,10 +209,10 @@ function inferCategory(desc) {
   if (!desc) return null;
   const t = desc.toLowerCase();
   const rules = [
-    { cat: "🏥 Médico",       keys: ["farmacia", "medic", "médic", "doctor", "turno", "clínica", "clinica", "hospital", "salud", "remedios", "pastillas", "análisis", "analisis", "kinesi", "odonto", "dentista", "enferm"] },
-    { cat: "🛒 Supermercado", keys: ["super", "mercado", "carrefour", "coto", "disco", "jumbo", "verdulería", "verduleria", "frutería", "fruteria", "almacén", "almacen", "kiosco", "fiambrería", "fiambr", "despensa"] },
-    { cat: "💡 Servicios",    keys: ["luz", "gas", "agua", "telefon", "internet", "expensas", "alquiler", "cable", "edenor", "edesur", "metrogas", "aysa", "servicio"] },
-    { cat: "🍽️ Salidas",      keys: ["restaurante", "restaurant", "café", "cafe", "confitería", "confiteria", "delivery", "pizza", "sushi", "helado", "cine", "teatro", "paseo", "mcdonald", "burger"] },
+    { cat: "🏥 Médico",       keys: ["farmacia", "medic", "médic", "doctor", "turno", "clínica", "clinica", "hospital", "salud", "remedios", "pastillas", "análisis", "analisis", "kinesi", "odonto", "dentista", "enferm", "prepaga", "osde", "swiss medical", "galeno", "obra social", "vacuna", "laboratorio", "óptica", "optica", "lentes", "psicolog", "terapia"] },
+    { cat: "🛒 Supermercado", keys: ["super", "mercado", "carrefour", "coto", "disco", "jumbo", "verdulería", "verduleria", "frutería", "fruteria", "almacén", "almacen", "kiosco", "fiambrería", "fiambr", "despensa", "walmart", "makro", "diarco", "panadería", "panaderia", "carnicería", "carniceria", "dietética", "dietetica", "verdura"] },
+    { cat: "💡 Servicios",    keys: ["luz", "gas", "agua", "telefon", "internet", "expensas", "alquiler", "cable", "edenor", "edesur", "metrogas", "aysa", "servicio", "abl", "rentas", "arba", "agip", "patente", "seguro", "monotributo", "afip", "impuesto", "municipal", "tasa", "movistar", "fibertel", "telecentro", "netflix", "spotify", "disney", "streaming", "suscripción", "suscripcion", "wifi"] },
+    { cat: "🍽️ Salidas",      keys: ["restaurante", "restaurant", "café", "cafe", "confitería", "confiteria", "delivery", "pizza", "sushi", "helado", "heladería", "heladeria", "cine", "teatro", "paseo", "mcdonald", "burger", "resto", "rappi", "pedidosya", "starbucks"] },
   ];
   for (const { cat, keys } of rules) {
     if (keys.some(k => t.includes(k))) return cat;
