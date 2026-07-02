@@ -1,0 +1,16 @@
+# Local-only working folder — backend script versions, keys, notes, exports.
+# NEVER committed. See local/README.md.
+local/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Secrets — belt-and-suspenders (these live in local/ or Script Properties)
+*serviceAccount*.json
+*service-account*.json
+*.key
+*.pem

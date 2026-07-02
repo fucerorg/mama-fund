@@ -13,6 +13,9 @@
 <title>Mama Fund</title>
 <meta name="robots" content="noindex, nofollow">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- Firebase Cloud Messaging (Web Push) — compat SDK, keep version in sync with sw.js -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -179,9 +182,20 @@ const CONFIG = {
   CATEGORIES: ["🛒 Supermercado", "💡 Servicios", "🍽️ Salidas", "🏥 Médico", "💰 Otros"],
   PAYMENT_METHODS: ["Cuenta", "Tarjeta", "Débito"],
   CAT_COLORS: ["#6ee7b7","#c4b5fd","#fca5a5","#fde68a","#93c5fd"],
+  // Firebase Cloud Messaging (Web Push). Public web app config + VAPID public
+  // key — safe to commit. Must match sw.js. See sw.js header for details.
+  FIREBASE: {
+    apiKey: "AIzaSyDi3J5UGAfK6Lpa61bede0mz84Ib4T8ovA",
+    authDomain: "mama-fund.firebaseapp.com",
+    projectId: "mama-fund",
+    storageBucket: "mama-fund.firebasestorage.app",
+    messagingSenderId: "434284641729",
+    appId: "1:434284641729:web:97c80a714ffacddb174340",
+  },
+  FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.1.18";
+const APP_VERSION = "v1.2.0";
 
 function today() {
   const d = new Date();
@@ -758,6 +772,7 @@ function initGoogleSignIn() {
           expForm: { ...state.expForm, paidBy: profile.appName },
         });
         loadTransactions();
+        registerPushNotifications();
         if (!localStorage.getItem("mf_tutorial_seen")) setTimeout(() => setState({ showTutorial: true }), 1000);
       } catch(e) {
         state.idToken = null;
@@ -888,6 +903,39 @@ function render() {
 function scheduleGoogleInit() {
   if (window.google?.accounts?.id) initGoogleSignIn();
   else setTimeout(scheduleGoogleInit, 300);
+}
+
+// ── Web Push (FCM) ─────────────────────────────────────────
+// Register the service worker on load; getToken() reuses this registration
+// instead of Firebase's default firebase-messaging-sw.js.
+let _swRegistration = null;
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js")
+      .then(reg => { _swRegistration = reg; })
+      .catch(err => console.warn("[push] SW register failed", err));
+  });
+}
+
+// Called after a successful sign-in: request permission and register the
+// device's FCM token with the backend. Auto-subscribe, no consent UI (3
+// internal users). Fails quietly — push supplements email, never blocks.
+async function registerPushNotifications() {
+  try {
+    if (!("serviceWorker" in navigator) || !("Notification" in window) || !window.firebase) return;
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+    const reg = _swRegistration || await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    if (!firebase.apps.length) firebase.initializeApp(CONFIG.FIREBASE);
+    const token = await firebase.messaging().getToken({
+      vapidKey: CONFIG.FCM_VAPID_PUBLIC_KEY,
+      serviceWorkerRegistration: reg,
+    });
+    if (token) await apiPost("registerPushToken", { fcmToken: token });
+  } catch (e) {
+    console.warn("[push] registration failed", e);
+  }
 }
 
 function renderAuth() {
@@ -1643,6 +1691,7 @@ async function init() {
         expForm: { ...state.expForm, paidBy: profile.appName },
       });
       loadTransactions();
+      registerPushNotifications();
       return;
     } catch(e) {
       localStorage.removeItem("mf_token");
