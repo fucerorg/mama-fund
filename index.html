@@ -195,7 +195,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.0";
+const APP_VERSION = "v1.2.1";
 
 function today() {
   const d = new Date();
@@ -922,9 +922,9 @@ if ("serviceWorker" in navigator) {
 // internal users). Fails quietly — push supplements email, never blocks.
 async function registerPushNotifications() {
   try {
-    if (!("serviceWorker" in navigator) || !("Notification" in window) || !window.firebase) return;
+    if (!("serviceWorker" in navigator) || !("Notification" in window) || !window.firebase) return false;
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
+    if (permission !== "granted") return false;
     const reg = _swRegistration || await navigator.serviceWorker.register("sw.js");
     await navigator.serviceWorker.ready;
     if (!firebase.apps.length) firebase.initializeApp(CONFIG.FIREBASE);
@@ -932,11 +932,26 @@ async function registerPushNotifications() {
       vapidKey: CONFIG.FCM_VAPID_PUBLIC_KEY,
       serviceWorkerRegistration: reg,
     });
-    if (token) await apiPost("registerPushToken", { fcmToken: token });
+    if (token) { await apiPost("registerPushToken", { fcmToken: token }); return true; }
+    return false;
   } catch (e) {
     console.warn("[push] registration failed", e);
+    return false;
   }
 }
+
+// Tap-triggered enable — iOS requires a user gesture to show the permission
+// prompt, so the topbar bell calls this instead of relying on the auto-call.
+window.enablePush = async () => {
+  if (!("Notification" in window)) {
+    showToast("En iPhone: agregá la app a la pantalla de inicio y abrila desde ahí.", true);
+    return;
+  }
+  const okPush = await registerPushNotifications();
+  if (okPush) { showToast("Notificaciones activadas 💜"); render(); }
+  else if (Notification.permission === "denied") showToast("Notificaciones bloqueadas. Activalas en los ajustes del navegador.", true);
+  else showToast("No se pudieron activar las notificaciones.", true);
+};
 
 function renderAuth() {
   if (state.authLoading) return `
@@ -973,6 +988,9 @@ function renderTopbar() {
         Mama<span>Fund</span>
       </div>
       <div class="topbar-user" style="display:flex;align-items:center;gap:10px;">
+        ${("Notification" in window && Notification.permission !== "granted")
+          ? `<button onclick="enablePush()" title="Activar notificaciones" style="background:none;border:1px solid var(--border);color:var(--accent);border-radius:99px;width:22px;height:22px;font-size:0.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">🔔</button>`
+          : ""}
         <button onclick="setState({showTutorial:true})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:99px;width:22px;height:22px;font-size:0.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">?</button>
         <div style="text-align:right;">${state.user.firstName}${adminBadge}<br><button onclick="signOut()" style="background:none;border:none;color:var(--muted);font-size:0.7rem;cursor:pointer;text-decoration:underline;">Salir</button></div>
       </div>
