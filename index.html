@@ -195,7 +195,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.5";
+const APP_VERSION = "v1.2.6";
 
 function today() {
   const d = new Date();
@@ -226,7 +226,8 @@ let state = {
   authLoading: false,
   tab: "gastos",
   transactions: [],
-  loading: false,
+  loading: false,      // overlay bloqueante: solo mientras se guarda
+  refreshing: false,   // recarga de datos en segundo plano (no bloquea)
   submitting: false,
   historialPage: 1,
   selectedMonth: new Date().toISOString().slice(0,7),
@@ -274,6 +275,7 @@ function handleApiResponse(d) {
       // Token vencido: no llamamos disableAutoSelect (eso obliga a elegir la
       // cuenta a mano); dejamos que One Tap vuelva a entrar solo.
       localStorage.removeItem("mf_token");
+      clearSessionCache();
       _gisPrompted = false;
       setState({ user: null, idToken: null, transactions: [] });
       throw new Error("Sesión expirada. Volvé a iniciar sesión.");
@@ -297,9 +299,35 @@ async function apiPost(action, params={}) {
   return handleApiResponse(await r.json());
 }
 
+// Caché local (perfil + transacciones) para abrir la app al instante con los
+// últimos datos conocidos y refrescar en segundo plano. Cada request a Apps
+// Script tarda varios segundos, así que esperar dos (me + transactions) antes
+// de mostrar algo hacía que la app se sintiera muy lenta.
+const CACHE_PROFILE = "mf_profile";
+const CACHE_TX = "mf_tx_cache";
+
+function readCache(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null"); } catch(_) { return null; }
+}
+function writeCache(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch(_) {}
+}
+function clearSessionCache() {
+  try { localStorage.removeItem(CACHE_PROFILE); localStorage.removeItem(CACHE_TX); } catch(_) {}
+}
+
+function profileToUser(profile) {
+  return {
+    name:      profile.name,
+    firstName: profile.appName,
+    email:     profile.email,
+    isAdmin:   profile.isAdmin,
+  };
+}
+
 async function loadTransactions() {
   if (!state.user) return;
-  setState({ loading: true });
+  setState({ refreshing: true });
   try {
     const data = await apiGet("transactions");
     const sorted = data.sort((a,b) => {
@@ -307,10 +335,12 @@ async function loadTransactions() {
       const db = (b.date || b.timestamp || "").slice(0,10);
       return db.localeCompare(da);
     });
-    setState({ transactions: sorted, loading: false });
+    if (!state.user) { state.refreshing = false; return; } // cerró sesión mientras cargaba
+    writeCache(CACHE_TX, { email: state.user.email, data: sorted });
+    setState({ transactions: sorted, refreshing: false });
   } catch(e) {
-    showToast("Error cargando datos", true);
-    setState({ loading: false });
+    if (state.user) showToast("Error cargando datos", true);
+    setState({ refreshing: false });
   }
 }
 
@@ -834,14 +864,10 @@ async function handleGoogleCredential(response) {
     // usamos; si no, el ID token de Google (vence a la hora).
     const token = profile.sessionToken || response.credential;
     localStorage.setItem("mf_token", token);
+    writeCache(CACHE_PROFILE, profile);
     setState({
       authLoading: false,
-      user: {
-        name:      profile.name,
-        firstName: profile.appName,
-        email:     profile.email,
-        isAdmin:   profile.isAdmin,
-      },
+      user: profileToUser(profile),
       idToken: token,
       expForm: { ...state.expForm, paidBy: profile.appName },
     });
@@ -1360,7 +1386,7 @@ function renderMovimientos() {
   }
 
   const filterBar = renderFilterBar("historialFilter", "setHistorialFilter", true, true);
-  if (state.loading) return filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
+  if (state.refreshing && !state.transactions.length) return filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
 
   const pageSize = 20;
   const maxVisible = state.historialPage * pageSize;
@@ -1533,7 +1559,7 @@ function renderResumen() {
 
   return `
     <div class="section" style="padding-top:14px;">
-      <div class="section-label">Estado actual ${state.loading?`<div class='spinner' style='display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;'></div>`:""}</div>
+      <div class="section-label">Estado actual ${state.refreshing?`<div class='spinner' style='display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;'></div>`:""}</div>
       <div class="cards-row">
         <div class="card wide" style="background:rgba(196,181,253,0.06);border-color:rgba(196,181,253,0.2);">
           <div class="card-label">💰 Saldo total mamá</div>
@@ -1831,7 +1857,7 @@ window.setCategoryFilter    = f => setState({ categoryFilter: f, historialPage: 
 window.setSibFilter         = f => setState({ sibFilter: f, historialPage: 1 });
 window.setResumenFilter     = f => setState({ resumenFilter: f });
 window.setState             = setState;
-window.signOut = () => { if (state.idToken) apiGet("logout").catch(() => {}); localStorage.removeItem("mf_token"); _gisPrompted = true; window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
+window.signOut = () => { if (state.idToken) apiGet("logout").catch(() => {}); localStorage.removeItem("mf_token"); clearSessionCache(); _gisPrompted = true; window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
 
 async function init() {
   let saved = localStorage.getItem("mf_token");
@@ -1841,6 +1867,31 @@ async function init() {
     localStorage.removeItem("mf_token");
     saved = null;
   }
+  const cachedProfile = readCache(CACHE_PROFILE);
+  if (saved && cachedProfile?.email) {
+    // Arranque instantáneo: mostramos el perfil y las transacciones guardadas
+    // y refrescamos ambos en paralelo. Si el token ya no sirve, el 401 de
+    // cualquiera de los dos requests vuelve a la pantalla de login.
+    const cachedTx = readCache(CACHE_TX);
+    setState({
+      user: profileToUser(cachedProfile),
+      idToken: saved,
+      transactions: cachedTx?.email === cachedProfile.email ? cachedTx.data : [],
+      expForm: { ...state.expForm, paidBy: cachedProfile.appName },
+    });
+    loadTransactions();
+    apiGet("me").then(profile => {
+      if (!state.user) return;
+      if (profile.sessionToken && profile.sessionToken !== state.idToken) {
+        localStorage.setItem("mf_token", profile.sessionToken);
+        state.idToken = profile.sessionToken;
+      }
+      writeCache(CACHE_PROFILE, profile);
+      setState({ user: profileToUser(profile) });
+    }).catch(() => {});
+    setTimeout(maybePromptPush, 1000);
+    return;
+  }
   if (saved) {
     state.idToken = saved;
     state.authLoading = true;
@@ -1848,14 +1899,10 @@ async function init() {
     try {
       const profile = await apiGet("me");
       if (profile.sessionToken) { saved = profile.sessionToken; localStorage.setItem("mf_token", saved); }
+      writeCache(CACHE_PROFILE, profile);
       setState({
         authLoading: false,
-        user: {
-          name:      profile.name,
-          firstName: profile.appName,
-          email:     profile.email,
-          isAdmin:   profile.isAdmin,
-        },
+        user: profileToUser(profile),
         idToken: saved,
         expForm: { ...state.expForm, paidBy: profile.appName },
       });
