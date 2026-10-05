@@ -195,7 +195,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.4";
+const APP_VERSION = "v1.2.5";
 
 function today() {
   const d = new Date();
@@ -271,8 +271,10 @@ function canEditTx(tx) {
 function handleApiResponse(d) {
   if (!d.ok) {
     if (d.code === 401) {
+      // Token vencido: no llamamos disableAutoSelect (eso obliga a elegir la
+      // cuenta a mano); dejamos que One Tap vuelva a entrar solo.
       localStorage.removeItem("mf_token");
-      window.google?.accounts?.id?.disableAutoSelect();
+      _gisPrompted = false;
       setState({ user: null, idToken: null, transactions: [] });
       throw new Error("Sesión expirada. Volvé a iniciar sesión.");
     }
@@ -309,6 +311,34 @@ async function loadTransactions() {
   } catch(e) {
     showToast("Error cargando datos", true);
     setState({ loading: false });
+  }
+}
+
+// Apps Script a veces devuelve error o se corta (p. ej. al mandar la
+// notificación de una transferencia) DESPUÉS de haber guardado la fila. Si el
+// usuario reintenta, queda duplicado. Por eso: mandamos un requestId estable
+// por formulario (el backend puede deduplicar con él) y, ante un error,
+// recargamos y verificamos si la transacción quedó guardada igual.
+function newRequestId() {
+  return (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + "-" + Math.random().toString(36).slice(2));
+}
+
+async function addTransactionSafely(params) {
+  const knownIds = new Set(state.transactions.map(t => t.id));
+  try {
+    await apiGet("addTransaction", params);
+  } catch(e) {
+    if (!state.user) throw e; // 401: el backend no guardó nada
+    await loadTransactions();
+    const saved = state.transactions.some(t =>
+      !knownIds.has(t.id) &&
+      t.loggedByEmail === state.user.email &&
+      t.type === params.type &&
+      parseFloat(t.amount) === params.amount &&
+      (t.date || t.timestamp || "").slice(0,10) === params.date &&
+      (t.recipient || "") === (params.recipient || "")
+    );
+    if (!saved) throw e;
   }
 }
 
@@ -358,9 +388,11 @@ async function submitExpense() {
       "Guardar igual");
     if (!ok) return;
   }
+  if (!f.requestId) f.requestId = newRequestId();
   setState({ loading: true, submitting: true });
   try {
-    await apiGet("addTransaction", {
+    await addTransactionSafely({
+      requestId: f.requestId,
       type: f.subtype, amount: parseFloat(f.amount),
       description: f.description || catShort(f.category),
       category: catShort(f.category),
@@ -370,7 +402,7 @@ async function submitExpense() {
     });
     const defaultPaidBy = matchSibling(state.user?.firstName);
     setState({ loading: false, submitting: false, aiText: "", aiLoading: false, aiResult: null,
-      expForm: { ...f, amount: "", description: "", paidBy: defaultPaidBy, date: today() } });
+      expForm: { ...f, requestId: "", amount: "", description: "", paidBy: defaultPaidBy, date: today() } });
     loadTransactions();
     setTimeout(() => showToast("✓ Gasto guardado"), 50);
   } catch(e) { setState({ loading: false, submitting: false }); showToast("Error al guardar: " + e.message, true); }
@@ -382,18 +414,33 @@ async function submitIncome() {
   const f = state.incForm;
   if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
   if (f.subtype === "transfer" && !f.recipient) { showToast("Seleccioná el destinatario", true); return; }
+  const amt = parseFloat(f.amount);
+  const dup = state.transactions.find(t =>
+    parseFloat(t.amount) === amt &&
+    (t.date || t.timestamp || "").slice(0,10) === f.date &&
+    t.type === f.subtype &&
+    (f.subtype !== "transfer" || t.recipient === f.recipient)
+  );
+  if (dup) {
+    const ok = await showConfirm("¿Posible duplicado?",
+      `Ya existe ${f.subtype === "transfer" ? "una transferencia" : "un ingreso"} de ${fmt(amt)} el ${fmtDateDisplay(f.date)}. ¿Guardás igual?`,
+      "Guardar igual");
+    if (!ok) return;
+  }
+  if (!f.requestId) f.requestId = newRequestId();
   setState({ loading: true, submitting: true });
   try {
     const desc = f.description ||
       (f.subtype === "transfer" ? `Transferencia de ${f.from} a ${f.recipient}` : f.source);
-    await apiGet("addTransaction", {
+    await addTransactionSafely({
+      requestId: f.requestId,
       type: f.subtype, amount: parseFloat(f.amount), description: desc, category: "",
       paidBy: f.subtype === "transfer" ? f.from : "",
       recipient: f.subtype === "transfer" ? f.recipient : "",
       source_type: f.source || "", date: f.date, source: "manual",
     });
     setState({ loading: false, submitting: false, aiText: "", aiLoading: false, aiResult: null,
-      incForm: { ...f, amount: "", description: "", date: today() } });
+      incForm: { ...f, requestId: "", amount: "", description: "", date: today() } });
     loadTransactions();
     setTimeout(() => showToast("✓ Registrado"), 50);
   } catch(e) { setState({ loading: false, submitting: false }); showToast("Error al guardar: " + e.message, true); }
@@ -750,46 +797,76 @@ function sortedBalances(txs) {
 }
 
 // ── Google Sign-In ─────────────────────────────────────────
+// render() se llama muchas veces; antes cada render re-inicializaba GIS y
+// volvía a abrir One Tap, cancelando el login en curso (había que loguearse
+// dos veces). Ahora se inicializa una sola vez y One Tap se abre una vez.
+let _gisInitialized = false;
+let _gisPrompted = false;
+
 function initGoogleSignIn() {
-  window.google.accounts.id.initialize({
-    client_id: CONFIG.GOOGLE_CLIENT_ID,
-    callback: async (response) => {
-      // Guardar token temporalmente para poder llamar action=me
-      state.idToken = response.credential;
-      state.authLoading = true;
-      render();
-      try {
-        const profile = await apiGet("me");
-        localStorage.setItem("mf_token", response.credential);
-        setState({
-          authLoading: false,
-          user: {
-            name:      profile.name,
-            firstName: profile.appName,
-            email:     profile.email,
-            isAdmin:   profile.isAdmin,
-          },
-          idToken: response.credential,
-          expForm: { ...state.expForm, paidBy: profile.appName },
-        });
-        loadTransactions();
-        // iOS forbids requesting notification permission without a user gesture,
-        // so we show a modal (with an "Activar" button) instead of auto-requesting.
-        if (!localStorage.getItem("mf_tutorial_seen")) setTimeout(() => setState({ showTutorial: true }), 1000);
-        else setTimeout(maybePromptPush, 1000);
-      } catch(e) {
-        state.idToken = null;
-        state.authLoading = false;
-        showToast("Error al iniciar sesión. Verificá tu acceso.", true);
-        render();
-      }
-    },
-    auto_select: true,
-  });
-  window.google.accounts.id.renderButton(document.getElementById("g-signin-btn"), {
+  if (!_gisInitialized) {
+    _gisInitialized = true;
+    window.google.accounts.id.initialize({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+      auto_select: true,
+    });
+  }
+  const btn = document.getElementById("g-signin-btn");
+  if (btn) window.google.accounts.id.renderButton(btn, {
     theme: "filled_black", size: "large", shape: "pill", text: "signin_with",
   });
-  window.google.accounts.id.prompt();
+  if (!_gisPrompted) {
+    _gisPrompted = true;
+    window.google.accounts.id.prompt();
+  }
+}
+
+async function handleGoogleCredential(response) {
+  if (state.authLoading || state.user) return;
+  // Guardar token temporalmente para poder llamar action=me
+  state.idToken = response.credential;
+  state.authLoading = true;
+  render();
+  try {
+    const profile = await apiGet("me");
+    // Si el backend emite un token de sesión propio (larga duración), lo
+    // usamos; si no, el ID token de Google (vence a la hora).
+    const token = profile.sessionToken || response.credential;
+    localStorage.setItem("mf_token", token);
+    setState({
+      authLoading: false,
+      user: {
+        name:      profile.name,
+        firstName: profile.appName,
+        email:     profile.email,
+        isAdmin:   profile.isAdmin,
+      },
+      idToken: token,
+      expForm: { ...state.expForm, paidBy: profile.appName },
+    });
+    loadTransactions();
+    // iOS forbids requesting notification permission without a user gesture,
+    // so we show a modal (with an "Activar" button) instead of auto-requesting.
+    if (!localStorage.getItem("mf_tutorial_seen")) setTimeout(() => setState({ showTutorial: true }), 1000);
+    else setTimeout(maybePromptPush, 1000);
+  } catch(e) {
+    state.idToken = null;
+    state.authLoading = false;
+    showToast("Error al iniciar sesión. Verificá tu acceso.", true);
+    render();
+  }
+}
+
+// Segundos hasta que vence un ID token de Google (JWT). null si no es un JWT
+// (p. ej. un token de sesión del backend).
+function jwtSecondsLeft(token) {
+  const parts = (token || "").split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload.exp - Math.floor(Date.now() / 1000);
+  } catch(_) { return null; }
 }
 
 function matchSibling(firstName) {
@@ -880,7 +957,11 @@ function formatMonth(m) {
 // ── Render ─────────────────────────────────────────────────
 function render() {
   const root = document.getElementById("root");
-  if (!state.user) { root.innerHTML = renderAuth(); scheduleGoogleInit(); return; }
+  if (!state.user) {
+    root.innerHTML = renderAuth();
+    if (!state.authLoading) scheduleGoogleInit();
+    return;
+  }
   root.innerHTML = `
     <div class="app">
       ${renderTopbar()}
@@ -1750,16 +1831,23 @@ window.setCategoryFilter    = f => setState({ categoryFilter: f, historialPage: 
 window.setSibFilter         = f => setState({ sibFilter: f, historialPage: 1 });
 window.setResumenFilter     = f => setState({ resumenFilter: f });
 window.setState             = setState;
-window.signOut = () => { localStorage.removeItem("mf_token"); window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
+window.signOut = () => { if (state.idToken) apiGet("logout").catch(() => {}); localStorage.removeItem("mf_token"); _gisPrompted = true; window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
 
 async function init() {
-  const saved = localStorage.getItem("mf_token");
+  let saved = localStorage.getItem("mf_token");
+  const left = jwtSecondsLeft(saved);
+  if (left !== null && left < 60) {
+    // ID token de Google vencido: ni lo probamos; One Tap (auto_select) re-loguea.
+    localStorage.removeItem("mf_token");
+    saved = null;
+  }
   if (saved) {
     state.idToken = saved;
     state.authLoading = true;
     render();
     try {
       const profile = await apiGet("me");
+      if (profile.sessionToken) { saved = profile.sessionToken; localStorage.setItem("mf_token", saved); }
       setState({
         authLoading: false,
         user: {
@@ -1775,7 +1863,8 @@ async function init() {
       setTimeout(maybePromptPush, 1000);
       return;
     } catch(e) {
-      localStorage.removeItem("mf_token");
+      // En 401 handleApiResponse ya borró el token; ante errores de red lo
+      // conservamos para no forzar un nuevo login.
       state.idToken = null;
       state.authLoading = false;
     }
