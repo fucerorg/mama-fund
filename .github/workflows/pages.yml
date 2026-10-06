@@ -26,6 +26,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Si fallan las pruebas de saldos, no se publica.
+      - name: Test balance rules
+        run: node --test tests/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

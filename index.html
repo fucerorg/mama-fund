@@ -125,6 +125,18 @@
   .sibling-balances { display: flex; flex-direction: column; gap: 8px; }
   .sib-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--surface2); border-radius: 10px; }
   .sib-name { font-size: 0.85rem; font-weight: 500; }
+  [data-ledger] { cursor: pointer; }
+  .sib-row[data-ledger]:active, .card[data-ledger]:active { opacity: .7; }
+  .sib-chev { color: var(--muted); font-size: 0.9rem; margin-left: 8px; }
+  .ledger-head { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0 14px; border-bottom: 1px solid var(--border); }
+  .ledger-bal { font-family: 'DM Serif Display', serif; font-size: 1.6rem; }
+  .ledger-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .ledger-desc { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ledger-delta { font-size: 0.9rem; font-weight: 600; text-align: right; }
+  .ledger-delta.pos { color: var(--income); }
+  .ledger-delta.neg { color: var(--expense); }
+  .ledger-meta { font-size: 0.7rem; color: var(--muted); }
+  .ledger-run { font-size: 0.7rem; color: var(--muted); text-align: right; }
   .sib-detail { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
   .sib-balance { font-family: 'DM Serif Display', serif; font-size: 1.1rem; }
   .sib-balance.pos { color: var(--income); }
@@ -158,6 +170,8 @@
   .toast { position: fixed; top: calc(var(--safe-top) + 16px); left: 50%; transform: translateX(-50%); background: var(--income); color: #0f1a0f; padding: 10px 20px; border-radius: 99px; font-size: 0.85rem; font-weight: 600; z-index: 999; pointer-events: none; opacity: 0; transition: opacity .3s; white-space: nowrap; }
   .toast.show { opacity: 1; }
   .toast.error { background: var(--expense); color: #1a0f0f; }
+  .undo-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-bot) + 76px); z-index: 999; display: flex; align-items: center; gap: 16px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 12px 10px 18px; border-radius: 99px; font-size: 0.85rem; box-shadow: 0 6px 24px rgba(0,0,0,.4); white-space: nowrap; }
+  .undo-bar button { background: none; border: none; color: var(--accent); font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 4px 6px; }
   .spinner { width: 18px; height: 18px; border: 2px solid rgba(196,181,253,.3); border-top-color: var(--mother); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 0.88rem; }
@@ -196,7 +210,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.9";
+const APP_VERSION = "v1.3.0";
 
 function today() {
   const d = new Date();
@@ -231,6 +245,7 @@ let state = {
   refreshing: false,   // recarga de datos en segundo plano (no bloquea)
   submitting: false,
   historialPage: 1,
+  historialSearch: "",
   selectedMonth: new Date().toISOString().slice(0,7),
   historialFilter: "all",
   categoryFilter: "all",
@@ -326,16 +341,26 @@ function profileToUser(profile) {
   };
 }
 
+// Orden del historial: fecha (más nueva primero) y, dentro del mismo día, hora
+// de carga (la última cargada arriba). Antes solo por fecha, y los días con
+// muchas cargas quedaban en el orden de la planilla.
+function txTime(t) {
+  const n = Date.parse(t.timestamp || "");
+  return isNaN(n) ? 0 : n;
+}
+function txDay(t) { return (t.date || t.timestamp || "").slice(0,10); }
+function sortTxs(txs) {
+  return txs.sort((a,b) => txDay(b).localeCompare(txDay(a)) || txTime(b) - txTime(a));
+}
+
 async function loadTransactions() {
   if (!state.user) return;
   setState({ refreshing: true });
   try {
     const data = await apiGet("transactions");
-    const sorted = data.sort((a,b) => {
-      const da = (a.date || a.timestamp || "").slice(0,10);
-      const db = (b.date || b.timestamp || "").slice(0,10);
-      return db.localeCompare(da);
-    });
+    // Un borrado en espera de "Deshacer" todavía existe en el backend.
+    const pendingId = _pendingDelete?.tx.id;
+    const sorted = sortTxs(pendingId ? data.filter(t => t.id !== pendingId) : data);
     if (!state.user) { state.refreshing = false; return; } // cerró sesión mientras cargaba
     writeCache(CACHE_TX, { email: state.user.email, data: sorted });
     setState({ transactions: sorted, refreshing: false });
@@ -364,8 +389,7 @@ async function addTransactionSafely(params) {
       const { requestId, ...fields } = params;
       const tx = { ...fields, id: res.id, timestamp: res.timestamp, date: res.date || params.date,
                    loggedBy: state.user.name, loggedByEmail: state.user.email };
-      state.transactions = [tx, ...state.transactions].sort((a,b) =>
-        (b.date || b.timestamp || "").slice(0,10).localeCompare((a.date || a.timestamp || "").slice(0,10)));
+      state.transactions = sortTxs([tx, ...state.transactions]);
     }
   } catch(e) {
     if (!state.user) throw e; // 401: el backend no guardó nada
@@ -495,18 +519,62 @@ async function deleteTransaction(id) {
   if (!canEditTx(tx)) { showToast("No tenés permiso para eliminar esta transacción", true); return; }
   const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.", "Eliminar");
   if (!confirmed) return;
-  // Se saca de la lista al instante; el backend tarda varios segundos (borra,
-  // recalcula saldos y notifica). Si falla, se vuelve a mostrar.
+  // Se saca de la lista al instante y el borrado recién se manda al backend a
+  // los UNDO_MS, para poder deshacerlo. Si la app pasa a segundo plano antes,
+  // se manda en ese momento.
+  flushPendingDelete();
   setState({ transactions: state.transactions.filter(t => t.id !== id) });
-  showToast("Eliminando...");
+  const pending = { tx, timer: setTimeout(() => commitDelete(pending), UNDO_MS) };
+  _pendingDelete = pending;
+  showUndoBar("Movimiento eliminado", () => {
+    clearTimeout(pending.timer);
+    _pendingDelete = null;
+    setState({ transactions: sortTxs([pending.tx, ...state.transactions]) });
+    showToast("✓ Restaurado");
+  });
+}
+
+const UNDO_MS = 6000;
+let _pendingDelete = null;
+
+async function commitDelete(pending) {
+  if (_pendingDelete === pending) _pendingDelete = null;
+  hideUndoBar();
   try {
-    await apiGet("deleteTransaction", { id });
+    await apiGet("deleteTransaction", { id: pending.tx.id });
     showToast("✓ Eliminado");
   } catch(e) {
     showToast("Error al eliminar: " + e.message, true);
   }
   loadTransactions();
 }
+
+function flushPendingDelete() {
+  const p = _pendingDelete;
+  if (!p) return;
+  clearTimeout(p.timer);
+  commitDelete(p);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushPendingDelete();
+});
+window.addEventListener("pagehide", flushPendingDelete);
+
+// Barra inferior con botón "Deshacer" (el toast no es clickeable).
+function showUndoBar(msg, onUndo) {
+  hideUndoBar();
+  const bar = document.createElement("div");
+  bar.id = "undo-bar";
+  bar.className = "undo-bar";
+  const text = document.createElement("span");
+  text.textContent = msg;
+  const btn = document.createElement("button");
+  btn.textContent = "Deshacer";
+  btn.onclick = () => { hideUndoBar(); onUndo(); };
+  bar.append(text, btn);
+  document.body.appendChild(bar);
+}
+function hideUndoBar() { document.getElementById("undo-bar")?.remove(); }
 
 // ── Edit — now uses updateTransaction ──────────────────────
 function editTransaction(id) {
@@ -590,16 +658,30 @@ function editTransaction(id) {
     sheet.appendChild(makeField("Categoría", catSelect));
   }
 
-  let paidBySelect = null;
-  if (tx.paidBy && CONFIG.SIBLINGS.includes(tx.paidBy)) {
+  // Quién paga / envía y quién recibe, según el tipo.
+  const people = ["Mamá", ...CONFIG.SIBLINGS];
+  let paidBySelect = null, recipientSelect = null;
+  if (tx.type === "expense") {
     paidBySelect = styledSelect(CONFIG.SIBLINGS.map(s => [s, s]), tx.paidBy);
     sheet.appendChild(makeField("Pagado por", paidBySelect));
+  } else if (tx.type === "transfer") {
+    paidBySelect = styledSelect(people.map(s => [s, s]), tx.paidBy || "Mamá");
+    recipientSelect = styledSelect(people.map(s => [s, s === "Mamá" ? "Mamá (devolución)" : s]), tx.recipient);
+    sheet.appendChild(makeField("De", paidBySelect));
+    sheet.appendChild(makeField("Para", recipientSelect));
+  } else if (tx.type === "income") {
+    recipientSelect = styledSelect(people.map(s => [s === "Mamá" ? "" : s, s]), tx.recipient || "");
+    sheet.appendChild(makeField("Ingresó a", recipientSelect));
   }
 
   const saveBtn = document.createElement("button");
   saveBtn.textContent = "Guardar cambios";
   saveBtn.style.cssText = "width:100%;background:var(--mother);color:#1a1a2e;border:none;border-radius:12px;padding:14px;font-family:inherit;font-size:1rem;font-weight:600;cursor:pointer;";
   saveBtn.onclick = async () => {
+    if (tx.type === "transfer" && paidBySelect.value === recipientSelect.value) {
+      showToast("Origen y destino no pueden ser iguales", true);
+      return;
+    }
     saveBtn.disabled = true;
     const spinner = document.createElement("div");
     spinner.className = "spinner";
@@ -614,7 +696,7 @@ function editTransaction(id) {
         description: descInput.value,
         category: catSelect ? catSelect.value : (tx.category || ""),
         paidBy: paidBySelect ? paidBySelect.value : (tx.paidBy || ""),
-        recipient: tx.recipient || "",
+        recipient: recipientSelect ? recipientSelect.value : (tx.recipient || ""),
         paymentMethod: tx.paymentMethod || "",
       });
       overlay.remove();
@@ -859,6 +941,107 @@ function sortedBalances(txs) {
   return CONFIG.SIBLINGS
     .map(s => ({ name: s, received: sib[s].received, sent: sib[s].sent, spent: sib[s].spent, aportes: sib[s].aportes, net: sib[s].received - sib[s].sent - sib[s].spent }))
     .sort((a,b) => b.net - a.net);
+}
+
+// Efecto de una transacción sobre cada "cuenta": un hermano (plata de mamá en
+// su mano) o "Mamá" (su cuenta bancaria). Mismas reglas que computeBalances;
+// tests/balances.test.mjs verifica que ambos den siempre lo mismo.
+function txEffects(t) {
+  const amt = parseFloat(t.amount || 0);
+  const isSib = n => CONFIG.SIBLINGS.includes(n);
+  if (t.type === "income") return [[isSib(t.recipient) ? t.recipient : "Mamá", amt]];
+  if (t.type === "mother_expense") return [["Mamá", -amt]];
+  if (t.type === "expense") return isSib(t.paidBy) ? [[t.paidBy, -amt]] : [];
+  if (t.type === "transfer") {
+    const from = isSib(t.paidBy) ? t.paidBy : "Mamá";
+    const to = isSib(t.recipient) ? t.recipient : (from !== "Mamá" ? "Mamá" : null);
+    return to ? [[from, -amt], [to, amt]] : [[from, -amt]];
+  }
+  return [];
+}
+
+// Movimientos de una cuenta en orden cronológico, con el saldo después de cada
+// uno. Devuelve el más nuevo primero.
+function ledgerFor(name, txs) {
+  const rows = [];
+  [...(txs || state.transactions)].reverse().forEach(t => {
+    txEffects(t).forEach(([acct, delta]) => { if (acct === name) rows.push({ t, delta }); });
+  });
+  let run = 0;
+  rows.forEach(r => { run += r.delta; r.balance = run; });
+  return rows.reverse();
+}
+
+function ledgerLabel(t, name) {
+  if (t.type === "transfer") {
+    const from = CONFIG.SIBLINGS.includes(t.paidBy) ? t.paidBy : "Mamá";
+    const to = t.recipient || "Mamá";
+    return from === name ? `Transferencia a ${to}` : `Transferencia de ${from}`;
+  }
+  return t.description || typeLabel[t.type] || t.type;
+}
+
+function showLedger(name) {
+  const rows = ledgerFor(name);
+  const balance = rows.length ? rows[0].balance : 0;
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.9);z-index:9999;display:flex;align-items:flex-end;justify-content:center;";
+  const sheet = document.createElement("div");
+  sheet.style.cssText = "background:var(--surface);border-radius:20px 20px 0 0;padding:20px 20px 28px;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;";
+
+  const title = name === "Mamá" ? "🏦 Cuenta de mamá" : `👤 ${name}`;
+  const subtitle = name === "Mamá" ? "Saldo en su cuenta bancaria" : "Plata de mamá en mano";
+  sheet.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-family:'DM Serif Display',serif;font-size:1.15rem;">Estado de cuenta · ${title}</span>
+      <button data-close style="background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;">×</button>
+    </div>
+    <div class="ledger-head">
+      <span class="ledger-meta">${subtitle}</span>
+      <span class="ledger-bal" style="color:${balance >= 0 ? "var(--income)" : "var(--expense)"}">${fmt(balance)}</span>
+    </div>
+    <div data-list></div>`;
+  const list = sheet.querySelector("[data-list]");
+
+  const PAGE = 60;
+  let shown = 0;
+  function renderMore() {
+    rows.slice(shown, shown + PAGE).forEach(({ t, delta, balance: run }) => {
+      const row = document.createElement("div");
+      row.className = "ledger-row";
+      const desc = document.createElement("div");
+      desc.className = "ledger-desc";
+      desc.textContent = ledgerLabel(t, name);
+      const d = document.createElement("div");
+      d.className = "ledger-delta " + (delta >= 0 ? "pos" : "neg");
+      d.textContent = (delta >= 0 ? "+" : "−") + fmt(Math.abs(delta));
+      const meta = document.createElement("div");
+      meta.className = "ledger-meta";
+      meta.textContent = fmtDateDisplay(txDay(t)) + " · " + (typeLabel[t.type] || t.type) + (t.category ? " · " + t.category : "");
+      const r = document.createElement("div");
+      r.className = "ledger-run";
+      r.textContent = "Saldo " + fmt(run);
+      row.append(desc, d, meta, r);
+      list.appendChild(row);
+    });
+    shown += PAGE;
+    sheet.querySelector("[data-more]")?.remove();
+    if (shown < rows.length) {
+      const more = document.createElement("button");
+      more.dataset.more = "";
+      more.textContent = `Ver más (${rows.length - shown})`;
+      more.style.cssText = "width:100%;margin-top:12px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px;font-family:inherit;cursor:pointer;";
+      more.onclick = renderMore;
+      sheet.appendChild(more);
+    }
+  }
+  if (!rows.length) list.innerHTML = `<div class="empty">Sin movimientos</div>`;
+  else renderMore();
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+  sheet.querySelector("[data-close]").onclick = () => overlay.remove();
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
 }
 
 // ── Google Sign-In ─────────────────────────────────────────
@@ -1211,7 +1394,7 @@ function renderMiniBalances() {
     const isMe = s.name.toLowerCase() === myName;
     const valClass = s.net > 0 ? "pos" : s.net < 0 ? "neg" : "zero";
     const sep = i < sorted.length - 1 ? `<span class="mini-bal-sep">·</span>` : "";
-    return `<span><span class="mini-bal-name${isMe?" mine":""}">${s.name}</span> <span class="mini-bal-val ${valClass}">${fmt(s.net)}</span></span>${sep}`;
+    return `<span data-ledger="${s.name}"><span class="mini-bal-name${isMe?" mine":""}">${s.name}</span> <span class="mini-bal-val ${valClass}">${fmt(s.net)}</span></span>${sep}`;
   }).join("");
   return `<div class="mini-balance">
     <div class="mini-balance-label">Saldo actual</div>
@@ -1410,6 +1593,42 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
     </div>`;
 }
 
+function normalizeText(str) {
+  return String(str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function txSearchText(t) {
+  return normalizeText([t.description, t.category, t.paidBy, t.recipient, t.loggedBy,
+    t.paymentMethod, typeLabel[t.type], String(Math.round(parseFloat(t.amount || 0)))].join(" "));
+}
+const escapeHtml = str => String(str).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]);
+
+// Buscador + atajo "Lo mío" (filtra por la persona que está usando la app).
+function renderHistorialTools() {
+  const me = state.user?.firstName;
+  const showMine = CONFIG.SIBLINGS.includes(me);
+  const mineActive = showMine && state.sibFilter === me;
+  return `
+    <div style="padding:12px 16px 0;display:flex;gap:8px;align-items:center;">
+      <input id="hist-search" type="search" placeholder="🔎 Buscar (farmacia, ABL, Vero...)" value="${escapeHtml(state.historialSearch)}"
+        style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;font-family:inherit;font-size:0.85rem;">
+      ${showMine ? `<button onclick="toggleMine()" style="flex-shrink:0;background:${mineActive ? "var(--accent)" : "var(--surface)"};color:${mineActive ? "#1a1a2e" : "var(--text)"};border:1px solid ${mineActive ? "var(--accent)" : "var(--border)"};border-radius:99px;padding:8px 14px;font-family:inherit;font-size:0.82rem;font-weight:600;cursor:pointer;">Lo mío</button>` : ""}
+    </div>`;
+}
+
+// Totales de lo que se está viendo con los filtros actuales.
+function renderHistorialTotals(txs) {
+  if (!txs.length) return "";
+  const sum = pred => txs.filter(pred).reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
+  const gastos = sum(t => t.type === "expense" || t.type === "mother_expense");
+  const ingresos = sum(t => t.type === "income");
+  const transf = sum(t => t.type === "transfer");
+  const parts = [`${txs.length} movimiento${txs.length === 1 ? "" : "s"}`];
+  if (gastos) parts.push(`Gastos <b style="color:var(--expense)">${fmt(gastos)}</b>`);
+  if (ingresos) parts.push(`Ingresos <b style="color:var(--mother)">${fmt(ingresos)}</b>`);
+  if (transf) parts.push(`Transf. <b style="color:var(--income)">${fmt(transf)}</b>`);
+  return `<div style="padding:10px 16px 0;font-size:0.75rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px;">${parts.join("<span>·</span>")}</div>`;
+}
+
 function renderMovimientos() {
   let txs = filterTxs(state.transactions, state.historialFilter);
   if (state.categoryFilter === "__transfer__") txs = txs.filter(t => t.type === "transfer");
@@ -1421,12 +1640,14 @@ function renderMovimientos() {
   if (state.sibFilter !== "all") {
     const s = state.sibFilter;
     txs = txs.filter(t => {
-      if (s === "Mamá") return t.type === "mother_expense" || t.paidBy === "Mamá" || t.from === "Mamá";
+      if (s === "Mamá") return txEffects(t).some(([acct]) => acct === "Mamá");
       return t.paidBy === s || t.recipient === s;
     });
   }
+  const q = normalizeText(state.historialSearch.trim());
+  if (q) txs = txs.filter(t => txSearchText(t).includes(q));
 
-  const filterBar = renderFilterBar("historialFilter", "setHistorialFilter", true, true);
+  const filterBar = renderHistorialTools() + renderFilterBar("historialFilter", "setHistorialFilter", true, true) + renderHistorialTotals(txs);
   if (state.refreshing && !state.transactions.length) return filterBar + `<div class="empty" style="margin-top:24px;"><div class="spinner"></div></div>`;
 
   const pageSize = 20;
@@ -1570,6 +1791,50 @@ function renderMovimientos() {
 // ════════════════════════════════════════════════════
 // RESUMEN TAB
 // ════════════════════════════════════════════════════
+// Texto del resumen del período elegido, para mandar por WhatsApp.
+function periodLabel(f) {
+  return f === "all" ? "acumulado total" : f === "ytd" ? "año en curso"
+    : f.length === 4 ? `año ${f}` : formatMonth(f);
+}
+function buildSummaryText() {
+  const txs = filterTxs(state.transactions, state.resumenFilter);
+  const sum = pred => txs.filter(pred).reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
+  const ingresos = sum(t => t.type === "income");
+  const gastos = sum(t => t.type === "expense" || t.type === "mother_expense");
+  const transferido = sum(t => t.type === "transfer" && !CONFIG.SIBLINGS.includes(t.paidBy));
+  const byCat = {};
+  txs.filter(t => t.type === "expense" || t.type === "mother_expense").forEach(t => {
+    const c = t.category || "Otros";
+    byCat[c] = (byCat[c] || 0) + parseFloat(t.amount || 0);
+  });
+  const rt = computeBalances(state.transactions);
+  const lines = [
+    `💜 *MamaFund* — ${periodLabel(state.resumenFilter)}`,
+    "",
+    `Ingresos: ${fmt(ingresos)}`,
+    `Gastos: ${fmt(gastos)}`,
+    ...Object.entries(byCat).sort((a,b) => b[1]-a[1]).map(([c, v]) => `   · ${c}: ${fmt(v)}`),
+    `Transferido a hermanos: ${fmt(transferido)}`,
+    "",
+    "*Saldos actuales*",
+    `🏦 Cuenta de mamá: ${fmt(rt.mamaBalance)}`,
+    ...sortedBalances(state.transactions).map(b => `👤 ${b.name}: ${fmt(b.net)}`),
+    `💰 Total: ${fmt(rt.systemBalance)}`,
+    "",
+    "https://moni.fucer.org",
+  ];
+  return lines.join("\n");
+}
+async function shareSummary() {
+  const text = buildSummaryText();
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
+}
+window.shareSummary = shareSummary;
+
 function renderResumen() {
   const filterBar = renderFilterBar("resumenFilter", "setResumenFilter");
   const txs    = filterTxs(state.transactions, state.resumenFilter);
@@ -1620,8 +1885,8 @@ function renderResumen() {
           <div class="card-value ${rt.systemBalance>=0?"income":"expense"}" style="font-size:1.8rem;">${fmt(rt.systemBalance)}</div>
           <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">Todos los ingresos − todos los gastos</div>
         </div>
-        <div class="card">
-          <div class="card-label">🏦 Saldo cuenta mamá</div>
+        <div class="card" data-ledger="Mamá">
+          <div class="card-label">🏦 Saldo cuenta mamá ›</div>
           <div class="card-value ${rt.mamaBalance>=0?"mother":"expense"}">${fmt(rt.mamaBalance)}</div>
           <div style="font-size:0.68rem;color:var(--muted);margin-top:4px;">En su cuenta bancaria</div>
         </div>
@@ -1634,6 +1899,10 @@ function renderResumen() {
     </div>
 
     ${filterBar}
+
+    <div style="padding:10px 16px 0;">
+      <button onclick="shareSummary()" style="width:100%;background:rgba(110,231,183,0.1);border:1px solid rgba(110,231,183,0.3);color:var(--income);border-radius:10px;padding:10px;font-family:inherit;font-size:0.85rem;font-weight:600;cursor:pointer;">📤 Compartir resumen de ${filterLabel}</button>
+    </div>
 
     <div class="section" style="margin-top:12px;">
       <div class="section-label">Flujo — ${filterLabel}</div>
@@ -1700,15 +1969,15 @@ function renderResumen() {
     </div>` : ""}
 
     <div class="section" style="margin-top:16px;padding-bottom:8px;">
-      <div class="section-label">Saldo operativo por hermano (plata de mamá en mano)</div>
+      <div class="section-label">Saldo operativo por hermano (plata de mamá en mano) · tocá para ver el detalle</div>
       <div class="sibling-balances">
         ${allBal.map(s=>`
-          <div class="sib-row">
+          <div class="sib-row" data-ledger="${s.name}">
             <div>
               <div class="sib-name">👤 ${s.name}</div>
               <div class="sib-detail">Recibió ${fmt(s.received)}${s.sent>0?` · Pasó ${fmt(s.sent)}`:""} · Gastó ${fmt(s.spent)}${s.aportes>0?` · Aportó ${fmt(s.aportes)}`:""}</div>
             </div>
-            <div class="sib-balance ${s.net>=0?"pos":"neg"}">${fmt(s.net)}</div>
+            <div style="display:flex;align-items:center;"><div class="sib-balance ${s.net>=0?"pos":"neg"}">${fmt(s.net)}</div><span class="sib-chev">›</span></div>
           </div>`).join("")}
       </div>
     </div>`;
@@ -1842,7 +2111,23 @@ window.sendAIPhoto = async (file) => {
 };
 
 // ── Events ─────────────────────────────────────────────────
+let _searchTimer;
 function attachEvents() {
+  const search = document.getElementById("hist-search");
+  if (search) search.addEventListener("input", () => {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => {
+      const el = document.getElementById("hist-search");
+      if (!el) return;
+      setState({ historialSearch: el.value, historialPage: 1 });
+      // render() reemplaza el input: devolver el foco y el cursor.
+      const again = document.getElementById("hist-search");
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    }, 250);
+  });
+  document.querySelectorAll("[data-ledger]").forEach(el =>
+    el.addEventListener("click", () => showLedger(el.dataset.ledger))
+  );
   document.querySelectorAll("[data-tab]").forEach(btn =>
     btn.addEventListener("click", () => setState({ tab: btn.dataset.tab }))
   );
@@ -1913,6 +2198,10 @@ window.fmtDateDisplay       = fmtDateDisplay;
 window.setHistorialFilter   = f => setState({ historialFilter: f, historialPage: 1 });
 window.setCategoryFilter    = f => setState({ categoryFilter: f, historialPage: 1 });
 window.setSibFilter         = f => setState({ sibFilter: f, historialPage: 1 });
+window.toggleMine           = () => {
+  const me = state.user?.firstName;
+  setState({ sibFilter: state.sibFilter === me ? "all" : me, historialPage: 1 });
+};
 window.setResumenFilter     = f => setState({ resumenFilter: f });
 window.setState             = setState;
 window.signOut = () => { if (state.idToken) apiGet("logout").catch(() => {}); localStorage.removeItem("mf_token"); clearSessionCache(); _gisPrompted = true; window.google?.accounts?.id?.disableAutoSelect(); setState({ user:null, idToken:null, transactions:[] }); };
