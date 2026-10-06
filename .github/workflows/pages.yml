@@ -28,7 +28,7 @@ jobs:
 
       # Si fallan las pruebas de saldos, no se publica.
       - name: Test balance rules
-        run: node --test tests/
+        run: node --test tests/*.test.mjs
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
