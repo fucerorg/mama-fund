@@ -88,16 +88,17 @@
   .tx-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
   .tx-icon.expense        { background: rgba(252,165,165,.12); }
   .tx-icon.mother_expense { background: rgba(252,165,165,.08); }
-  .tx-icon.income         { background: rgba(110,231,183,.12); }
-  .tx-icon.transfer       { background: rgba(196,181,253,.12); }
+  .tx-icon.income         { background: rgba(196,181,253,.12); }
+  .tx-icon.transfer       { background: rgba(110,231,183,.12); }
   .tx-body { flex: 1; min-width: 0; }
   .tx-desc { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tx-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .tx-meta .me { color: var(--accent); font-weight: 600; }
   .tx-amount { font-family: 'DM Serif Display', serif; font-size: 1.05rem; flex-shrink: 0; }
   .tx-amount.expense        { color: var(--expense); }
   .tx-amount.mother_expense { color: var(--expense); }
-  .tx-amount.income         { color: var(--income); }
-  .tx-amount.transfer       { color: var(--mother); }
+  .tx-amount.income         { color: var(--mother); }
+  .tx-amount.transfer       { color: var(--income); }
   .tx-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
   .tx-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1rem; border-radius: 6px; transition: color .15s; }
   .tx-btn:hover { color: var(--text); }
@@ -195,7 +196,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.8";
+const APP_VERSION = "v1.2.9";
 
 function today() {
   const d = new Date();
@@ -356,7 +357,16 @@ function newRequestId() {
 async function addTransactionSafely(params) {
   const knownIds = new Set(state.transactions.map(t => t.id));
   try {
-    await apiGet("addTransaction", params);
+    const res = await apiGet("addTransaction", params);
+    // Se agrega a la lista local al instante para que los saldos de arriba se
+    // actualicen sin esperar la recarga (que igual corre después).
+    if (res?.id && !state.transactions.some(t => t.id === res.id)) {
+      const { requestId, ...fields } = params;
+      const tx = { ...fields, id: res.id, timestamp: res.timestamp, date: res.date || params.date,
+                   loggedBy: state.user.name, loggedByEmail: state.user.email };
+      state.transactions = [tx, ...state.transactions].sort((a,b) =>
+        (b.date || b.timestamp || "").slice(0,10).localeCompare((a.date || a.timestamp || "").slice(0,10)));
+    }
   } catch(e) {
     if (!state.user) throw e; // 401: el backend no guardó nada
     await loadTransactions();
@@ -1476,13 +1486,25 @@ function renderMovimientos() {
 
       const meta = document.createElement("div");
       meta.className = "tx-meta";
-      const parts = [typeLabel[t.type] || t.type];
-      if (t.paidBy) parts.push(t.paidBy);
-      if (t.recipient) parts.push("→ " + t.recipient);
-      if (t.category) parts.push(t.category);
-      if (t.paymentMethod) parts.push(t.paymentMethod);
-      if (!canEdit && t.loggedByEmail !== myEmail) parts.push("(" + (t.loggedBy || "?") + ")");
-      meta.textContent = parts.join(" · ");
+      // Cada parte: [texto, nombre]. El nombre del usuario que navega se
+      // resalta para que encuentre lo suyo de un vistazo.
+      const myName = state.user?.firstName;
+      const parts = [[typeLabel[t.type] || t.type]];
+      if (t.paidBy) parts.push(["", t.paidBy]);
+      if (t.recipient) parts.push(["→ ", t.recipient]);
+      if (t.category) parts.push([t.category]);
+      if (t.paymentMethod) parts.push([t.paymentMethod]);
+      if (!canEdit && t.loggedByEmail !== myEmail) parts.push(["(" + (t.loggedBy || "?") + ")"]);
+      parts.forEach(([text, name], i) => {
+        if (i) meta.appendChild(document.createTextNode(" · "));
+        if (text) meta.appendChild(document.createTextNode(text));
+        if (name) {
+          const nameEl = document.createElement("span");
+          nameEl.textContent = name;
+          if (name === myName) nameEl.className = "me";
+          meta.appendChild(nameEl);
+        }
+      });
       body.appendChild(meta);
       item.appendChild(body);
 
