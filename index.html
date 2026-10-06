@@ -195,7 +195,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.7";
+const APP_VERSION = "v1.2.8";
 
 function today() {
   const d = new Date();
@@ -434,7 +434,7 @@ async function submitExpense() {
     setState({ loading: false, submitting: false, aiText: "", aiLoading: false, aiResult: null,
       expForm: { ...f, requestId: "", amount: "", description: "", paidBy: defaultPaidBy, date: today() } });
     loadTransactions();
-    setTimeout(() => showToast("✓ Gasto guardado"), 50);
+    showToast("✓ Gasto guardado");
   } catch(e) { setState({ loading: false, submitting: false }); showToast("Error al guardar: " + e.message, true); }
 }
 
@@ -474,7 +474,7 @@ async function submitIncome() {
     setState({ loading: false, submitting: false, aiText: "", aiLoading: false, aiResult: null,
       incForm: { ...f, requestId: "", amount: "", description: "", date: today() } });
     loadTransactions();
-    setTimeout(() => showToast("✓ Registrado"), 50);
+    showToast("✓ Registrado");
   } catch(e) { setState({ loading: false, submitting: false }); showToast("Error al guardar: " + e.message, true); }
 }
 
@@ -485,11 +485,17 @@ async function deleteTransaction(id) {
   if (!canEditTx(tx)) { showToast("No tenés permiso para eliminar esta transacción", true); return; }
   const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.", "Eliminar");
   if (!confirmed) return;
+  // Se saca de la lista al instante; el backend tarda varios segundos (borra,
+  // recalcula saldos y notifica). Si falla, se vuelve a mostrar.
+  setState({ transactions: state.transactions.filter(t => t.id !== id) });
+  showToast("Eliminando...");
   try {
     await apiGet("deleteTransaction", { id });
-    await loadTransactions();
-    setTimeout(() => showToast("✓ Eliminado"), 50);
-  } catch(e) { showToast("Error al eliminar: " + e.message, true); }
+    showToast("✓ Eliminado");
+  } catch(e) {
+    showToast("Error al eliminar: " + e.message, true);
+  }
+  loadTransactions();
 }
 
 // ── Edit — now uses updateTransaction ──────────────────────
@@ -602,9 +608,9 @@ function editTransaction(id) {
         paymentMethod: tx.paymentMethod || "",
       });
       overlay.remove();
-      await loadTransactions();
       setState({ tab: "movimientos" });
-      setTimeout(() => showToast("✓ Cambios guardados"), 100);
+      showToast("✓ Cambios guardados");
+      loadTransactions();
     } catch(e) {
       saveBtn.disabled = false;
       saveBtn.textContent = "Guardar cambios";
@@ -920,9 +926,15 @@ function matchSibling(firstName) {
 
 // ── Toast ──────────────────────────────────────────────────
 let toastTimer;
+// El toast vive fuera de #root: render() reemplaza todo #root y antes borraba
+// el aviso apenas llegaba una recarga en segundo plano.
 function showToast(msg, isError=false) {
-  const el = document.getElementById("toast");
-  if (!el) return;
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    document.body.appendChild(el);
+  }
   el.textContent = msg;
   el.className = "toast show" + (isError?" error":"");
   clearTimeout(toastTimer);
@@ -1015,7 +1027,7 @@ function render() {
     </div>
     ${state.showTutorial ? renderTutorial() : ""}
     ${state.showPushPrompt ? renderPushPrompt() : ""}
-    <div id="toast" class="toast"></div>
+    
     ${state.loading ? `<div style="position:fixed;inset:0;background:rgba(15,15,26,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:998;gap:16px;">
       <div class="spinner" style="width:36px;height:36px;border-width:3px;"></div>
       <div style="color:var(--muted);font-size:0.85rem;">Guardando...</div>
@@ -1133,7 +1145,7 @@ function renderAuth() {
         <div style="color:var(--muted);font-size:0.85rem;">Iniciando sesión...</div>
       </div>
     </div>
-    <div id="toast" class="toast"></div>`;
+    `;
   return `
     <div class="auth-screen">
       <img src="logo.png" style="width:100px;height:100px;margin-bottom:16px;border-radius:16px;" alt="Mama Fund">
@@ -1144,7 +1156,7 @@ function renderAuth() {
         <div style="margin-top:16px;font-size:0.7rem;color:var(--muted);">${APP_VERSION}</div>
       </div>
     </div>
-    <div id="toast" class="toast"></div>`;
+    `;
 }
 
 function renderTopbar() {
