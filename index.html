@@ -210,7 +210,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.3.0";
+const APP_VERSION = "v1.3.1";
 
 function today() {
   const d = new Date();
@@ -1615,18 +1615,21 @@ function renderHistorialTools() {
     </div>`;
 }
 
-// Totales de lo que se está viendo con los filtros actuales.
+// Totales de lo que se está viendo, solo cuando hay un filtro o búsqueda
+// activa (sin filtros es el total histórico, que no aporta). Una sola línea.
 function renderHistorialTotals(txs) {
-  if (!txs.length) return "";
+  const filtering = state.historialFilter !== "all" || state.categoryFilter !== "all" ||
+    state.sibFilter !== "all" || state.historialSearch.trim();
+  if (!txs.length || !filtering) return "";
   const sum = pred => txs.filter(pred).reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
   const gastos = sum(t => t.type === "expense" || t.type === "mother_expense");
   const ingresos = sum(t => t.type === "income");
   const transf = sum(t => t.type === "transfer");
-  const parts = [`${txs.length} movimiento${txs.length === 1 ? "" : "s"}`];
+  const parts = [`${txs.length} mov.`];
   if (gastos) parts.push(`Gastos <b style="color:var(--expense)">${fmt(gastos)}</b>`);
-  if (ingresos) parts.push(`Ingresos <b style="color:var(--mother)">${fmt(ingresos)}</b>`);
+  if (ingresos) parts.push(`Ingr. <b style="color:var(--mother)">${fmt(ingresos)}</b>`);
   if (transf) parts.push(`Transf. <b style="color:var(--income)">${fmt(transf)}</b>`);
-  return `<div style="padding:10px 16px 0;font-size:0.75rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px;">${parts.join("<span>·</span>")}</div>`;
+  return `<div style="padding:10px 16px 0;font-size:0.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${parts.join(" · ")}</div>`;
 }
 
 function renderMovimientos() {
