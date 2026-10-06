@@ -195,7 +195,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.2.6";
+const APP_VERSION = "v1.2.7";
 
 function today() {
   const d = new Date();
@@ -444,6 +444,7 @@ async function submitIncome() {
   const f = state.incForm;
   if (!f.amount || isNaN(parseFloat(f.amount))) { showToast("Ingresá un monto válido", true); return; }
   if (f.subtype === "transfer" && !f.recipient) { showToast("Seleccioná el destinatario", true); return; }
+  if (f.subtype === "transfer" && f.recipient === f.from) { showToast("Origen y destino no pueden ser iguales", true); return; }
   const amt = parseFloat(f.amount);
   const dup = state.transactions.find(t =>
     parseFloat(t.amount) === amt &&
@@ -465,8 +466,9 @@ async function submitIncome() {
     await addTransactionSafely({
       requestId: f.requestId,
       type: f.subtype, amount: parseFloat(f.amount), description: desc, category: "",
-      paidBy: f.subtype === "transfer" ? f.from : "",
-      recipient: f.subtype === "transfer" ? f.recipient : "",
+      paidBy: f.subtype === "transfer" ? f.from : aportanteOf({ source_type: f.source }),
+      recipient: f.subtype === "transfer" ? f.recipient
+               : (CONFIG.SIBLINGS.includes(f.recipient) ? f.recipient : ""),
       source_type: f.source || "", date: f.date, source: "manual",
     });
     setState({ loading: false, submitting: false, aiText: "", aiLoading: false, aiResult: null,
@@ -782,11 +784,26 @@ function showConfirm(title, subtitle, okLabel="Confirmar") {
 }
 
 // ── Computed balances ──────────────────────────────────────
+// Hermano que hizo un aporte (plata propia que entra al fondo de mamá).
+// Registros nuevos: paidBy. Registros viejos: "Aporte <Nombre>" en la
+// descripción (source_type nunca se guardó en la planilla).
+function aportanteOf(t) {
+  if (CONFIG.SIBLINGS.includes(t.paidBy)) return t.paidBy;
+  const m = String(t.source_type || t.description || "").match(/^Aporte\s+(\S+)/i);
+  return m ? CONFIG.SIBLINGS.find(s => s.toLowerCase() === m[1].toLowerCase()) || "" : "";
+}
+
+// Transferencias = la plata de mamá cambia de manos; el total no cambia.
+//   Mamá → hermano:    baja la cuenta de mamá, sube lo que el hermano tiene en mano.
+//   hermano → hermano: baja el que envía, sube el que recibe; mamá no cambia.
+//   hermano → Mamá:    baja el que envía, sube la cuenta de mamá (devolución).
+// Aportes = ingreso de plata propia de un hermano al fondo (no es pasamanos).
 function computeBalances(txs) {
   txs = txs || state.transactions;
   const sib = {};
-  CONFIG.SIBLINGS.forEach(s => sib[s] = { received: 0, spent: 0, aportes: 0 });
+  CONFIG.SIBLINGS.forEach(s => sib[s] = { received: 0, sent: 0, spent: 0, aportes: 0 });
   let mamaIngresos = 0, mamaGastos = 0, totalIngresos = 0, totalGastos = 0, totalTransfers = 0;
+  let mamaTransfersOut = 0, mamaTransfersIn = 0;
 
   txs.forEach(t => {
     const amt = parseFloat(t.amount || 0);
@@ -794,14 +811,16 @@ function computeBalances(txs) {
       totalIngresos += amt;
       if (t.recipient && sib[t.recipient] !== undefined) sib[t.recipient].received += amt;
       else mamaIngresos += amt;
-      if ((t.source_type || t.description || "").startsWith("Aporte")) {
-        const src = t.source_type || "";
-        CONFIG.SIBLINGS.forEach(s => { if (src.includes(s) && sib[s]) sib[s].aportes += amt; });
-      }
+      const aportante = aportanteOf(t);
+      if (aportante) sib[aportante].aportes += amt;
     }
     if (t.type === "transfer") {
-      totalTransfers += amt;
-      if (t.recipient && sib[t.recipient] !== undefined) sib[t.recipient].received += amt;
+      const fromSib = sib[t.paidBy] !== undefined;
+      const toSib = sib[t.recipient] !== undefined;
+      if (fromSib) sib[t.paidBy].sent += amt;
+      else { mamaTransfersOut += amt; totalTransfers += amt; }
+      if (toSib) sib[t.recipient].received += amt;
+      else if (fromSib) mamaTransfersIn += amt;
     }
     if (t.type === "expense") {
       totalGastos += amt;
@@ -812,7 +831,7 @@ function computeBalances(txs) {
 
   return {
     sib, mamaIngresos, mamaGastos,
-    mamaBalance: mamaIngresos - mamaGastos - totalTransfers,
+    mamaBalance: mamaIngresos - mamaGastos - mamaTransfersOut + mamaTransfersIn,
     totalIngresos, totalGastos,
     systemBalance: totalIngresos - totalGastos,
     totalTransfers,
@@ -822,7 +841,7 @@ function computeBalances(txs) {
 function sortedBalances(txs) {
   const { sib } = computeBalances(txs);
   return CONFIG.SIBLINGS
-    .map(s => ({ name: s, received: sib[s].received, spent: sib[s].spent, aportes: sib[s].aportes, net: sib[s].received - sib[s].spent }))
+    .map(s => ({ name: s, received: sib[s].received, sent: sib[s].sent, spent: sib[s].spent, aportes: sib[s].aportes, net: sib[s].received - sib[s].sent - sib[s].spent }))
     .sort((a,b) => b.net - a.net);
 }
 
@@ -1304,7 +1323,7 @@ function renderIngresos() {
           <label class="form-label">Para</label>
           <select class="form-control" style="height:48px;" id="if-recipient">
             <option value="">— Seleccionar —</option>
-            ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s}</option>`).join("")}
+            ${senders.filter(s => s !== f.from).map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s === "Mamá" ? "Mamá (devolución)" : s}</option>`).join("")}
           </select>
         </div>
       </div>` : `
@@ -1526,7 +1545,8 @@ function renderResumen() {
   const allBal = sortedBalances(allTxs);
   const rt = computeBalances(allTxs);
 
-  const totalTransfers = txs.filter(t=>t.type==="transfer").reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  // Solo lo que sale de la cuenta de mamá; entre hermanos es un pasamanos.
+  const totalTransfers = txs.filter(t=>t.type==="transfer" && !CONFIG.SIBLINGS.includes(t.paidBy)).reduce((s,t)=>s+parseFloat(t.amount||0),0);
   const totalExpHermanos = txs.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
 
   const byCat = {};
@@ -1652,7 +1672,7 @@ function renderResumen() {
           <div class="sib-row">
             <div>
               <div class="sib-name">👤 ${s.name}</div>
-              <div class="sib-detail">Recibió ${fmt(s.received)} · Gastó ${fmt(s.spent)}${s.aportes>0?` · Aportó ${fmt(s.aportes)}`:""}</div>
+              <div class="sib-detail">Recibió ${fmt(s.received)}${s.sent>0?` · Pasó ${fmt(s.sent)}`:""} · Gastó ${fmt(s.spent)}${s.aportes>0?` · Aportó ${fmt(s.aportes)}`:""}</div>
             </div>
             <div class="sib-balance ${s.net>=0?"pos":"neg"}">${fmt(s.net)}</div>
           </div>`).join("")}
@@ -1826,7 +1846,11 @@ function attachEvents() {
     if(lbl) lbl.textContent = fmtDateDisplay(e.target.value);
   });
   se("if-amount",    e=>{state.incForm.amount=e.target.value;});
-  se("if-from",      e=>{state.incForm.from=e.target.value;});
+  se("if-from",      e=>{
+    // Re-render para que "Para" no ofrezca al mismo que envía.
+    const from = e.target.value, f = state.incForm;
+    setState({ incForm: { ...f, from, recipient: f.recipient === from ? "" : f.recipient } });
+  });
   se("if-source",    e=>{state.incForm.source=e.target.value;});
   se("if-recipient", e=>{state.incForm.recipient=e.target.value;});
   se("if-desc",      e=>{state.incForm.description=e.target.value;});
