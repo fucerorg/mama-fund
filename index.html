@@ -213,7 +213,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.3.2";
+const APP_VERSION = "v1.3.3";
 
 function today() {
   const d = new Date();
@@ -1643,6 +1643,19 @@ function renderHistorialTotals(txs) {
   return `<div style="padding:10px 16px 0;font-size:0.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${parts.join(" · ")}</div>`;
 }
 
+// Las transferencias con la descripción automática ("Transferencia de Mamá a
+// Vero") se cortaban en pantallas chicas y repetían los nombres de abajo: el
+// título queda "Transferencia" y abajo "Mamá → Vero". Las descripciones
+// escritas a mano se respetan.
+function isAutoTransferDesc(t) {
+  return t.type === "transfer" &&
+    (!t.description || /^transferencia de \S+ a \S+$/i.test(String(t.description).trim()));
+}
+function txTitle(t) {
+  if (isAutoTransferDesc(t)) return typeLabel.transfer;
+  return t.description || typeLabel[t.type] || t.type;
+}
+
 function renderMovimientos() {
   let txs = filterTxs(state.transactions, state.historialFilter);
   if (state.categoryFilter === "__transfer__") txs = txs.filter(t => t.type === "transfer");
@@ -1709,7 +1722,7 @@ function renderMovimientos() {
       const descRow = document.createElement("div");
       descRow.className = "tx-desc";
       const descText = document.createElement("span");
-      descText.textContent = t.description || typeLabel[t.type] || t.type;
+      descText.textContent = txTitle(t);
       descRow.appendChild(descText);
       if (wasEdited) {
         const dot = document.createElement("span");
@@ -1724,14 +1737,20 @@ function renderMovimientos() {
       // Cada parte: [texto, nombre]. El nombre del usuario que navega se
       // resalta para que encuentre lo suyo de un vistazo.
       const myName = state.user?.firstName;
-      const parts = [[typeLabel[t.type] || t.type]];
-      if (t.paidBy) parts.push(["", t.paidBy]);
-      if (t.recipient) parts.push(["→ ", t.recipient]);
+      const parts = isAutoTransferDesc(t) ? [] : [[typeLabel[t.type] || t.type]];
+      if (t.type === "transfer") {
+        // "Mamá → Vero" en una sola parte (antes "Mamá · → Vero").
+        parts.push(["", t.paidBy || "Mamá"]);
+        parts.push(["→ ", t.recipient, true]);
+      } else {
+        if (t.paidBy) parts.push(["", t.paidBy]);
+        if (t.recipient) parts.push(["→ ", t.recipient]);
+      }
       if (t.category) parts.push([t.category]);
       if (t.paymentMethod) parts.push([t.paymentMethod]);
       if (!canEdit && t.loggedByEmail !== myEmail) parts.push(["(" + (t.loggedBy || "?") + ")"]);
-      parts.forEach(([text, name], i) => {
-        if (i) meta.appendChild(document.createTextNode(" · "));
+      parts.forEach(([text, name, joinWithSpace], i) => {
+        if (i) meta.appendChild(document.createTextNode(joinWithSpace ? " " : " · "));
         if (text) meta.appendChild(document.createTextNode(text));
         if (name) {
           const nameEl = document.createElement("span");
@@ -1921,8 +1940,8 @@ function renderResumen() {
     <div class="section" style="margin-top:12px;">
       <div class="section-label">Flujo — ${filterLabel}</div>
       <div class="cards-row">
-        <div class="card"><div class="card-label">Total ingresos</div><div class="card-value income">${fmt(totalIngresos)}</div></div>
-        <div class="card"><div class="card-label">Total transferido</div><div class="card-value mother">${fmt(totalTransfers)}</div></div>
+        <div class="card"><div class="card-label">Total ingresos</div><div class="card-value mother">${fmt(totalIngresos)}</div></div>
+        <div class="card"><div class="card-label">Total transferido</div><div class="card-value income">${fmt(totalTransfers)}</div></div>
         <div class="card"><div class="card-label">Total gastos</div><div class="card-value expense">${fmt(totalGastos)}</div></div>
         <div class="card"><div class="card-label">Gastos hermanos</div><div class="card-value expense">${fmt(totalExpHermanos)}</div></div>
         <div class="card"><div class="card-label">Saldo cuenta mamá</div><div class="card-value ${mamaBalance>=0?"mother":"expense"}">${fmt(mamaBalance)}</div></div>
@@ -1976,7 +1995,7 @@ function renderResumen() {
         ${aportesEntries.map((x,i)=>`
           <div class="bar-row">
             <div class="bar-label">👤 ${x.name}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(x.val/aportesMax*100)}%;background:var(--income)"></div></div>
+            <div class="bar-track"><div class="bar-fill" style="width:${Math.round(x.val/aportesMax*100)}%;background:var(--mother)"></div></div>
             <div class="bar-amount">${fmt(x.val)}</div>
           </div>`).join("")}
       </div>
