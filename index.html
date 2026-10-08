@@ -99,10 +99,16 @@
   .tx-amount.mother_expense { color: var(--expense); }
   .tx-amount.income         { color: var(--mother); }
   .tx-amount.transfer       { color: var(--income); }
-  .tx-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-  .tx-btn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; font-size: 1rem; border-radius: 6px; transition: color .15s; }
-  .tx-btn:hover { color: var(--text); }
-  .tx-btn.disabled { opacity: 0.2; cursor: not-allowed; pointer-events: none; }
+  .tx-item { cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .15s; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .tx-item:active { background: var(--surface2); }
+  .act-sheet-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; }
+  .act-sheet-title { font-size: 0.98rem; font-weight: 600; word-break: break-word; }
+  .act-sheet-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  .act-sheet-amt { font-family: 'DM Serif Display', serif; font-size: 1.25rem; flex-shrink: 0; margin-left: auto; }
+  .act-btn { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 52px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-family: inherit; font-size: 0.95rem; padding: 0 16px; margin-top: 8px; cursor: pointer; text-align: left; }
+  .act-btn:active { opacity: .7; }
+  .act-btn.danger { color: var(--expense); }
+  .act-note { font-size: 0.8rem; color: var(--muted); text-align: center; padding: 10px 0 4px; }
   /* edited badge */
   .tx-edited { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; flex-shrink: 0; }
 
@@ -213,7 +219,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.3.3";
+const APP_VERSION = "v1.3.4";
 
 function today() {
   const d = new Date();
@@ -521,8 +527,6 @@ async function deleteTransaction(id) {
   const tx = state.transactions.find(t => t.id === id);
   if (!tx) return;
   if (!canEditTx(tx)) { showToast("No tenés permiso para eliminar esta transacción", true); return; }
-  const confirmed = await showConfirm("¿Eliminar esta transacción?", "Esta acción no se puede deshacer.", "Eliminar");
-  if (!confirmed) return;
   // Se saca de la lista al instante y el borrado recién se manda al backend a
   // los UNDO_MS, para poder deshacerlo. Si la app pasa a segundo plano antes,
   // se manda en ese momento.
@@ -686,37 +690,94 @@ function editTransaction(id) {
       showToast("Origen y destino no pueden ser iguales", true);
       return;
     }
-    saveBtn.disabled = true;
-    const spinner = document.createElement("div");
-    spinner.className = "spinner";
-    spinner.style.cssText = "margin:auto;border-top-color:#1a1a2e;border-color:rgba(26,26,46,0.3);";
-    saveBtn.textContent = "";
-    saveBtn.appendChild(spinner);
+    const changes = {
+      date: dateInput.value || txDate,
+      amount: parseFloat(amountInput.value) || parseFloat(tx.amount),
+      description: descInput.value,
+      category: catSelect ? catSelect.value : (tx.category || ""),
+      paidBy: paidBySelect ? paidBySelect.value : (tx.paidBy || ""),
+      recipient: recipientSelect ? recipientSelect.value : (tx.recipient || ""),
+      paymentMethod: tx.paymentMethod || "",
+    };
+    // Igual que al guardar y borrar: el cambio se ve al instante y se
+    // confirma por detrás. Si el servidor falla, se vuelve atrás.
+    overlay.remove();
+    const edited = { ...tx, ...changes, updatedAt: new Date().toISOString() };
+    setState({ transactions: sortTxs(state.transactions.map(t => t.id === tx.id ? edited : t)) });
     try {
-      await apiGet("updateTransaction", {
-        id: tx.id,
-        date: dateInput.value || txDate,
-        amount: parseFloat(amountInput.value) || parseFloat(tx.amount),
-        description: descInput.value,
-        category: catSelect ? catSelect.value : (tx.category || ""),
-        paidBy: paidBySelect ? paidBySelect.value : (tx.paidBy || ""),
-        recipient: recipientSelect ? recipientSelect.value : (tx.recipient || ""),
-        paymentMethod: tx.paymentMethod || "",
-      });
-      overlay.remove();
-      setState({ tab: "movimientos" });
+      await apiGet("updateTransaction", { id: tx.id, ...changes });
       showToast("✓ Cambios guardados");
-      loadTransactions();
     } catch(e) {
-      saveBtn.disabled = false;
-      saveBtn.textContent = "Guardar cambios";
-      showToast("Error: " + e.message, true);
+      setState({ transactions: sortTxs(state.transactions.map(t => t.id === tx.id ? tx : t)) });
+      showToast("No se guardó el cambio: " + e.message, true);
     }
+    loadTransactions();
   };
   sheet.appendChild(saveBtn);
   overlay.appendChild(sheet);
   document.body.appendChild(overlay);
   overlay.addEventListener("click", e => { if(e.target === overlay) overlay.remove(); });
+}
+
+// ── Menú de acciones de un movimiento ──────────────────────
+function showTxActions(id) {
+  const t = state.transactions.find(x => x.id === id);
+  if (!t) return;
+  const canEdit = canEditTx(t);
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,15,26,0.9);z-index:9999;display:flex;align-items:flex-end;justify-content:center;";
+  const sheet = document.createElement("div");
+  sheet.style.cssText = "background:var(--surface);border-radius:20px 20px 0 0;padding:20px 20px calc(var(--safe-bot) + 20px);width:100%;max-width:500px;";
+  const close = () => overlay.remove();
+
+  const head = document.createElement("div");
+  head.className = "act-sheet-head";
+  const icon = document.createElement("div");
+  icon.className = "tx-icon " + t.type;
+  icon.textContent = txIcon(t);
+  const info = document.createElement("div");
+  info.style.minWidth = "0";
+  const title = document.createElement("div");
+  title.className = "act-sheet-title";
+  // Acá sí va la descripción completa (en la lista se corta).
+  title.textContent = t.description || txTitle(t);
+  const meta = document.createElement("div");
+  meta.className = "act-sheet-meta";
+  const who = t.type === "transfer" ? `${t.paidBy || "Mamá"} → ${t.recipient}`
+    : [t.paidBy, t.recipient && "→ " + t.recipient].filter(Boolean).join(" ");
+  meta.textContent = [fmtDateDisplay(txDay(t)), typeLabel[t.type] || t.type, who, t.category, t.paymentMethod]
+    .filter(Boolean).join(" · ");
+  if (t.loggedBy) meta.append(document.createElement("br"), "Cargado por " + t.loggedBy);
+  info.append(title, meta);
+  const amt = document.createElement("div");
+  amt.className = "act-sheet-amt tx-amount " + t.type;
+  amt.textContent = fmt(parseFloat(t.amount || 0));
+  head.append(icon, info, amt);
+  sheet.appendChild(head);
+
+  const action = (label, svg, onClick, cls = "") => {
+    const b = document.createElement("button");
+    b.className = "act-btn " + cls;
+    b.innerHTML = svg;
+    b.append(label);
+    b.onclick = () => { close(); onClick(); };
+    sheet.appendChild(b);
+  };
+  const ic = path => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+  if (canEdit) {
+    action("Editar", ic('<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>'), () => editTransaction(t.id));
+    action("Historial de cambios", ic('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'), () => showActivityLog(t.id));
+    action("Eliminar", ic('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/>'), () => deleteTransaction(t.id), "danger");
+  } else {
+    const note = document.createElement("div");
+    note.className = "act-note";
+    note.textContent = "Solo quien lo cargó puede editarlo o eliminarlo.";
+    sheet.appendChild(note);
+  }
+
+  overlay.appendChild(sheet);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
 }
 
 // ── Activity log modal ─────────────────────────────────────
@@ -1209,6 +1270,8 @@ function formatMonth(m) {
 }
 
 // ── Render ─────────────────────────────────────────────────
+let _lastRenderedTab = null;
+let _pendingListMount = null; // lista del Historial armada con DOM; se monta en render()
 function render() {
   const root = document.getElementById("root");
   if (!state.user) {
@@ -1216,6 +1279,14 @@ function render() {
     if (!state.authLoading) scheduleGoogleInit();
     return;
   }
+  // render() reemplaza todo #root: guardar scroll y foco para devolverlos.
+  // Antes cada recarga en segundo plano te tiraba al principio de la lista.
+  const prevContent = root.querySelector(".content");
+  const prevScroll = prevContent && _lastRenderedTab === state.tab ? prevContent.scrollTop : 0;
+  const focused = document.activeElement;
+  const focusId = focused && root.contains(focused) && focused.id;
+  let selStart = null, selEnd = null;
+  try { if (focusId) { selStart = focused.selectionStart; selEnd = focused.selectionEnd; } } catch(e) {}
   root.innerHTML = `
     <div class="app">
       ${renderTopbar()}
@@ -1229,7 +1300,21 @@ function render() {
       <div class="spinner" style="width:36px;height:36px;border-width:3px;"></div>
       <div style="color:var(--muted);font-size:0.85rem;">Guardando...</div>
     </div>` : ""}`;
+  if (_pendingListMount) {
+    document.getElementById("tx-list-mount")?.replaceWith(_pendingListMount);
+    _pendingListMount = null;
+  }
+  _lastRenderedTab = state.tab;
+  const content = root.querySelector(".content");
+  if (content && prevScroll) content.scrollTop = prevScroll;
   attachEvents();
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el) {
+      el.focus({ preventScroll: true });
+      try { if (selStart != null) el.setSelectionRange(selStart, selEnd); } catch(e) {}
+    }
+  }
   clearInterval(window._aiPlaceholderInterval);
   window._aiPlaceholderInterval = setInterval(() => {
     const el = document.getElementById("ai-text");
@@ -1768,38 +1853,8 @@ function renderMovimientos() {
       amtEl.textContent = fmt(parseFloat(t.amount||0));
       item.appendChild(amtEl);
 
-      // Action buttons
-      const actions = document.createElement("div");
-      actions.className = "tx-actions";
-
-      // History button: only for owner or admin (avoids exposing backend ownership bug)
-      if (canEdit) {
-        const histBtn = document.createElement("button");
-        histBtn.className = "tx-btn";
-        histBtn.title = "Ver historial de cambios";
-        histBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-        histBtn.addEventListener("click", () => showActivityLog(t.id));
-        actions.appendChild(histBtn);
-      }
-
-      // Edit button
-      const editBtn = document.createElement("button");
-      editBtn.className = "tx-btn" + (canEdit ? "" : " disabled");
-      editBtn.title = canEdit ? "Editar" : "Sin permiso";
-      editBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-      if (canEdit) editBtn.addEventListener("click", () => editTransaction(t.id));
-      actions.appendChild(editBtn);
-
-      // Delete button
-      const delBtn = document.createElement("button");
-      delBtn.className = "tx-btn" + (canEdit ? "" : " disabled");
-      delBtn.title = canEdit ? "Eliminar" : "Sin permiso";
-      delBtn.textContent = "×";
-      delBtn.style.fontSize = "1.1rem";
-      if (canEdit) delBtn.addEventListener("click", () => deleteTransaction(t.id));
-      actions.appendChild(delBtn);
-
-      item.appendChild(actions);
+      // Tocar la fila abre el menú de acciones (botones grandes, no íconos de 28px).
+      item.addEventListener("click", () => showTxActions(t.id));
       listDiv.appendChild(item);
     });
   });
@@ -1813,12 +1868,10 @@ function renderMovimientos() {
   }
 
   // Return filterBar HTML + mount the DOM list after render
-  const placeholder = `<div id="tx-list-mount"></div>`;
-  requestAnimationFrame(() => {
-    const mount = document.getElementById("tx-list-mount");
-    if (mount) mount.replaceWith(listDiv);
-  });
-  return filterBar + placeholder;
+  // Se monta en render() justo después del innerHTML (sin esperar un frame),
+  // así el scroll se puede restaurar sobre la lista completa.
+  _pendingListMount = listDiv;
+  return filterBar + `<div id="tx-list-mount"></div>`;
 }
 
 // ════════════════════════════════════════════════════
@@ -2153,9 +2206,6 @@ function attachEvents() {
       const el = document.getElementById("hist-search");
       if (!el) return;
       setState({ historialSearch: el.value, historialPage: 1 });
-      // render() reemplaza el input: devolver el foco y el cursor.
-      const again = document.getElementById("hist-search");
-      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
     }, 250);
   });
   document.querySelectorAll("[data-ledger]").forEach(el =>
