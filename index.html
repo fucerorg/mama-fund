@@ -64,6 +64,27 @@
   .btn-primary { width: 100%; background: var(--mother); color: #1a1a2e; border: none; border-radius: 12px; padding: 15px; font-family: inherit; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 4px; }
   .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 
+  /* ── Formulario compacto (monto grande + chips) ── */
+  .amt-field { display: flex; align-items: baseline; gap: 6px; border-bottom: 2px solid var(--border); padding: 2px 2px 6px; margin-bottom: 12px; transition: border-color .2s; }
+  .amt-field:focus-within { border-color: var(--mother); }
+  .amt-field .cur { font-family: 'DM Serif Display', serif; font-size: 1.6rem; color: var(--muted); }
+  .amt-field input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text); font-family: 'DM Serif Display', serif; font-size: 2.4rem; line-height: 1.1; padding: 0; }
+  .amt-field input::placeholder { color: var(--muted); }
+  .chip-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .chip-row .lbl { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; width: 50px; flex-shrink: 0; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chips.scroll { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 24px; }
+  .chip { position: relative; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 99px; padding: 8px 14px; font-size: 0.85rem; font-family: inherit; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .chip.on { background: rgba(196,181,253,.16); border-color: var(--mother); color: var(--mother); font-weight: 600; }
+  .chip.me { color: var(--accent); }
+  .chip.on.me { color: var(--mother); }
+  .chip input[type=date] { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+  .btn-primary small { font-weight: 400; opacity: .75; }
+  @keyframes ai-glow { 0%, 60% { box-shadow: 0 0 0 3px rgba(196,181,253,.45); } 100% { box-shadow: 0 0 0 0 rgba(196,181,253,0); } }
+  .ai-flash .chip.on, .ai-flash .amt-field, .ai-flash #ef-desc, .ai-flash #if-desc { animation: ai-glow 1.6s ease-out; border-radius: 10px; }
+  .ai-flash .chip.on { border-radius: 99px; }
+
   /* ── Segmented control ── */
   .seg { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 3px; margin-bottom: 16px; gap: 2px; }
   .seg-btn { flex: 1; padding: 8px 4px; text-align: center; border-radius: 8px; font-size: 0.75rem; cursor: pointer; color: var(--muted); border: none; background: none; font-family: inherit; transition: all .2s; line-height: 1.3; }
@@ -245,14 +266,33 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.3.5";
+const APP_VERSION = "v1.4.0";
 
 function today() {
   const d = new Date();
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0,10);
 }
+function yesterday() {
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+}
 function catShort(c) { return c.replace(/^[^\s]+\s/,""); }
+
+// Monto con separador de miles mientras se escribe: el estado guarda
+// "15000.5" y el campo muestra "15.000,5".
+function amountInputValue(raw) {
+  if (raw === "" || raw == null) return "";
+  const [i, d] = String(raw).split(".");
+  const int = (i || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return d !== undefined ? int + "," + d : int;
+}
+function parseAmountInput(text) {
+  let t = String(text).replace(/[^\d,]/g, "");
+  const k = t.indexOf(",");
+  if (k >= 0) t = t.slice(0, k) + "." + t.slice(k + 1).replace(/,/g, "").slice(0, 2);
+  return t.replace(/^0+(?=\d)/, "");
+}
 
 // ── Category heuristic ─────────────────────────────────────
 function inferCategory(desc) {
@@ -297,6 +337,7 @@ let state = {
   aiLoading: false,
   aiListening: false,
   aiResult: null,
+  aiFlash: false,      // resalta un momento los campos que completó la IA
   incForm: {
     subtype: "transfer",
     amount: "", description: "",
@@ -449,16 +490,17 @@ async function parseWithGemini(text) {
     const parsed = await apiGet("parseWithAI", { text: encodeURIComponent(text) });
 
     if (parsed.type === "expense" || parsed.type === "mother_expense") {
-      const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
+      const cat = (parsed.category && CONFIG.CATEGORIES.find(c => c.toLowerCase().includes(parsed.category.toLowerCase())))
+        || inferCategory(parsed.description) || CONFIG.CATEGORIES[0];
       setState({
-        aiLoading: false, aiResult: parsed, tab: "gastos",
+        aiLoading: false, aiResult: parsed, aiFlash: true, tab: "gastos",
         expForm: { ...state.expForm, subtype: parsed.type, amount: parsed.amount ? String(parsed.amount) : "",
           description: parsed.description || "", category: cat, paidBy: parsed.paidBy || state.expForm.paidBy,
           paymentMethod: parsed.paymentMethod || "Cuenta", date: parsed.date || today() }
       });
     } else {
       setState({
-        aiLoading: false, aiResult: parsed, tab: "ingresos",
+        aiLoading: false, aiResult: parsed, aiFlash: true, tab: "ingresos",
         incForm: { ...state.incForm, subtype: parsed.type || "transfer", amount: parsed.amount ? String(parsed.amount) : "",
           description: parsed.description || "", source: parsed.source || state.incForm.source,
           recipient: parsed.recipient || "", from: parsed.type === "transfer" ? "Mamá" : state.incForm.from,
@@ -1554,6 +1596,47 @@ function renderAIBox() {
     </div>`;
 }
 
+// Fila de chips: un toque elige el valor (reemplaza los desplegables).
+function chipRow(label, form, field, options, current, scroll = false) {
+  const me = state.user?.firstName;
+  return `<div class="chip-row"><span class="lbl">${label}</span><div class="chips${scroll ? " scroll" : ""}">
+    ${options.map(([val, text]) => `<button type="button" class="chip${val === current ? " on" : ""}${val === me ? " me" : ""}"
+      data-chip data-form="${form}" data-field="${field}" data-val="${escapeHtml(val)}">${text}</button>`).join("")}
+  </div></div>`;
+}
+function dateChips(form, date) {
+  const t = today(), y = yesterday();
+  const other = date !== t && date !== y;
+  const short = new Date(date + "T12:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+  return `<div class="chip-row"><span class="lbl">Fecha</span><div class="chips">
+    <button type="button" class="chip${date === t ? " on" : ""}" data-chip data-form="${form}" data-field="date" data-val="${t}">Hoy</button>
+    <button type="button" class="chip${date === y ? " on" : ""}" data-chip data-form="${form}" data-field="date" data-val="${y}">Ayer</button>
+    <label class="chip${other ? " on" : ""}">📅 ${other ? short : "Otra"}<input type="date" id="${form === "exp" ? "ef" : "if"}-date" value="${date}"></label>
+  </div></div>`;
+}
+function amountField(id, raw) {
+  return `<label class="amt-field"><span class="cur">$</span>
+    <input id="${id}" type="text" inputmode="decimal" autocomplete="off" placeholder="0" value="${amountInputValue(raw)}"></label>`;
+}
+// El botón dice qué se va a guardar: última revisión antes de tocar.
+function saveLabel(form) {
+  const f = form === "exp" ? state.expForm : state.incForm;
+  const amt = parseFloat(f.amount) > 0 ? fmt(parseFloat(f.amount)) : "";
+  let title, parts;
+  if (form === "exp") {
+    title = "Guardar gasto";
+    parts = [amt, f.subtype === "expense" ? f.paidBy : "Mamá"];
+  } else if (f.subtype === "transfer") {
+    title = "Transferir";
+    parts = [amt, f.recipient ? `${f.from} → ${f.recipient}` : ""];
+  } else {
+    title = "Guardar ingreso";
+    parts = [amt, f.source];
+  }
+  const extra = parts.filter(Boolean).join(" · ");
+  return `${title}${extra ? ` <small>· ${escapeHtml(extra)}</small>` : ""}`;
+}
+
 // ════════════════════════════════════════════════════
 // GASTOS TAB
 // ════════════════════════════════════════════════════
@@ -1561,52 +1644,22 @@ function renderGastos() {
   const f = state.expForm;
   const isMother = f.subtype === "mother_expense";
   return `
-    <div class="form-screen">
+    <div class="form-screen${state.aiFlash ? " ai-flash" : ""}">
       ${renderMiniBalances()}
       ${renderAIBox()}
-      <h2 style="margin-bottom:14px;">Registrar gasto</h2>
       <div class="seg">
         <button class="seg-btn${!isMother?" active":""}" data-subtype="expense" data-form="exp">Hermanos</button>
         <button class="seg-btn${isMother?" active":""}" data-subtype="mother_expense" data-form="exp">Mamá</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Fecha</label>
-          <input class="form-control date-input" id="ef-date" type="date" value="${f.date}">
-          <div class="date-label" style="font-size:0.75rem;color:var(--mother);margin-top:4px;">${fmtDateDisplay(f.date)}</div>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Monto (ARS $)</label>
-          <input class="form-control" id="ef-amount" type="number" inputmode="decimal" placeholder="0" value="${f.amount}">
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Categoría</label>
-          <select class="form-control" style="height:48px;" id="ef-cat">
-            ${CONFIG.CATEGORIES.map(c=>`<option value="${c}" ${f.category===c?"selected":""}>${c}</option>`).join("")}
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Descripción (opcional)</label>
-          <input class="form-control" style="height:48px;" id="ef-desc" type="text" placeholder="¿En qué?" value="${f.description||""}">
-        </div>
-      </div>
-      ${isMother ? `
-      <div class="form-group" style="margin-top:10px;">
-        <label class="form-label">Medio de pago</label>
-        <select class="form-control" id="ef-payment">
-          ${CONFIG.PAYMENT_METHODS.map(m=>`<option value="${m}" ${f.paymentMethod===m?"selected":""}>${m}</option>`).join("")}
-        </select>
-      </div>` : `
-      <div class="form-group" style="margin-top:10px;">
-        <label class="form-label">Pagado por</label>
-        <select class="form-control" id="ef-paidby">
-          ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.paidBy===s?"selected":""}>${s}</option>`).join("")}
-        </select>
-      </div>`}
-      <button class="btn-primary" ${state.loading?"disabled":""} onclick="submitExpense()">
-        ${state.loading?`<div class="spinner" style="margin:auto"></div>`:"Guardar gasto"}
+      ${amountField("ef-amount", f.amount)}
+      <input class="form-control" id="ef-desc" type="text" placeholder="¿En qué? (opcional)" value="${escapeHtml(f.description || "")}" style="margin-bottom:12px;">
+      ${dateChips("exp", f.date)}
+      ${isMother
+        ? chipRow("Medio", "exp", "paymentMethod", CONFIG.PAYMENT_METHODS.map(m => [m, m]), f.paymentMethod)
+        : chipRow("Pagó", "exp", "paidBy", CONFIG.SIBLINGS.map(s => [s, s]), f.paidBy)}
+      ${chipRow("Tipo", "exp", "category", CONFIG.CATEGORIES.map(c => [c, c]), f.category, true)}
+      <button class="btn-primary" id="ef-save" ${state.loading?"disabled":""} onclick="submitExpense()">
+        ${state.loading?`<div class="spinner" style="margin:auto"></div>`:saveLabel("exp")}
       </button>
     </div>`;
 }
@@ -1617,67 +1670,29 @@ function renderGastos() {
 function renderIngresos() {
   const f = state.incForm;
   const isTransfer = f.subtype === "transfer";
-  const senders = ["Mamá", ...CONFIG.SIBLINGS];
+  const people = ["Mamá", ...CONFIG.SIBLINGS];
+  const sourceIcon = s => s.includes("Jubilación")?"💵":s.includes("Alquiler")?"🏠":s.includes("Aporte")?"🤝":"💶";
+  const incomeTo = CONFIG.SIBLINGS.includes(f.recipient) ? f.recipient : "Mamá";
   return `
-    <div class="form-screen">
+    <div class="form-screen${state.aiFlash ? " ai-flash" : ""}">
       ${renderMiniBalances()}
       ${renderAIBox()}
-      <h2 style="margin-bottom:14px;">Ingresos y transferencias</h2>
       <div class="seg">
         <button class="seg-btn${isTransfer?" active":""}" data-subtype="transfer" data-form="inc">Transferencia</button>
         <button class="seg-btn${!isTransfer?" active":""}" data-subtype="income" data-form="inc">Ingreso</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Fecha</label>
-          <input class="form-control date-input" id="if-date" type="date" value="${f.date}">
-          <div class="date-label" style="font-size:0.75rem;color:var(--mother);margin-top:4px;">${fmtDateDisplay(f.date)}</div>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Monto (ARS $)</label>
-          <input class="form-control" id="if-amount" type="number" inputmode="decimal" placeholder="0" value="${f.amount}">
-        </div>
-      </div>
+      ${amountField("if-amount", f.amount)}
+      <input class="form-control" id="if-desc" type="text" placeholder="Detalle (opcional)" value="${escapeHtml(f.description || "")}" style="margin-bottom:12px;">
+      ${dateChips("inc", f.date)}
       ${isTransfer ? `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">De</label>
-          <select class="form-control" style="height:48px;" id="if-from">
-            ${senders.map(s=>`<option value="${s}" ${f.from===s?"selected":""}>${s}</option>`).join("")}
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Para</label>
-          <select class="form-control" style="height:48px;" id="if-recipient">
-            <option value="">— Seleccionar —</option>
-            ${senders.filter(s => s !== f.from).map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s === "Mamá" ? "Mamá (devolución)" : s}</option>`).join("")}
-          </select>
-        </div>
-      </div>` : `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Fuente</label>
-          <select class="form-control" style="height:48px;" id="if-source">
-            ${CONFIG.INCOME_SOURCES.map(s=>{
-              const icon = s.includes("Jubilación")?"💵":s.includes("Alquiler")?"🏠":s.includes("Aporte")?"🤝":"💶";
-              return `<option value="${s}" ${f.source===s?"selected":""}>${icon} ${s}</option>`;
-            }).join("")}
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Ingresó a</label>
-          <select class="form-control" style="height:48px;" id="if-recipient">
-            <option value="Mamá" ${(f.recipient==="Mamá"||!f.recipient)?"selected":""}>Mamá</option>
-            ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${f.recipient===s?"selected":""}>${s}</option>`).join("")}
-          </select>
-        </div>
-      </div>`}
-      <div class="form-group" style="margin-top:10px;">
-        <label class="form-label">Descripción (opcional)</label>
-        <input class="form-control" id="if-desc" type="text" placeholder="Detalle..." value="${f.description||""}">
-      </div>
-      <button class="btn-primary" ${state.loading?"disabled":""} onclick="submitIncome()">
-        ${state.loading?`<div class="spinner" style="margin:auto"></div>`:"Guardar"}
+        ${chipRow("De", "inc", "from", people.map(s => [s, s]), f.from)}
+        ${chipRow("Para", "inc", "recipient", [...CONFIG.SIBLINGS, "Mamá"].filter(s => s !== f.from).map(s => [s, s === "Mamá" ? "Mamá ↩" : s]), f.recipient)}
+      ` : `
+        ${chipRow("Fuente", "inc", "source", CONFIG.INCOME_SOURCES.map(s => [s, `${sourceIcon(s)} ${s}`]), f.source, true)}
+        ${chipRow("Para", "inc", "recipient", people.map(s => [s, s]), incomeTo)}
+      `}
+      <button class="btn-primary" id="if-save" ${state.loading?"disabled":""} onclick="submitIncome()">
+        ${state.loading?`<div class="spinner" style="margin:auto"></div>`:saveLabel("inc")}
       </button>
     </div>`;
 }
@@ -2103,7 +2118,7 @@ function renderTutorial() {
     { icon:"💰", title:"Gastos", desc:"Registrá gastos pagados por los hermanos o directamente de la cuenta de mamá." },
     { icon:"📤", title:"Ingresos y transferencias", desc:"Registrá cuando mamá transfiere plata a un hermano, o cuando entra un ingreso." },
     { icon:"📋", title:"Historial", desc:"Ve todos los movimientos. Filtrá por fecha, categoría o persona. Editá o eliminá solo tus propios registros." },
-    { icon:"🕐", title:"Historial de cambios", desc:"Cada transacción tiene un log de cambios. Tocá el ícono de reloj para ver quién editó qué y cuándo." },
+    { icon:"🕐", title:"Historial de cambios", desc:"Tocá un movimiento en el Historial para editarlo, eliminarlo o ver quién lo cambió y cuándo." },
     { icon:"📊", title:"Resumen", desc:"Estado actual de la cuenta de mamá y el saldo de cada hermano en tiempo real." },
     { icon:"✨", title:"Entrada con IA", desc:'Escribí en lenguaje natural: "Mery pagó 15000 en el super ayer" y la IA completa el formulario.' },
   ];
@@ -2179,16 +2194,17 @@ window.sendAIPhoto = async (file) => {
     if (!d.ok) throw new Error(d.error);
     const parsed = d.data;
     if (parsed.type === "expense" || parsed.type === "mother_expense") {
-      const cat = CONFIG.CATEGORIES.find(c => c.toLowerCase().includes((parsed.category||"").toLowerCase())) || CONFIG.CATEGORIES[0];
+      const cat = (parsed.category && CONFIG.CATEGORIES.find(c => c.toLowerCase().includes(parsed.category.toLowerCase())))
+        || inferCategory(parsed.description) || CONFIG.CATEGORIES[0];
       setState({
-        aiLoading: false, aiResult: parsed, aiText: "", tab: "gastos",
+        aiLoading: false, aiResult: parsed, aiFlash: true, aiText: "", tab: "gastos",
         expForm: { ...state.expForm, subtype: parsed.type || "expense", amount: parsed.amount ? String(parsed.amount) : "",
           description: parsed.description || "", category: cat, paidBy: parsed.paidBy || state.expForm.paidBy,
           paymentMethod: parsed.paymentMethod || "Cuenta", date: parsed.date || today() }
       });
     } else {
       setState({
-        aiLoading: false, aiResult: parsed, aiText: "", tab: "ingresos",
+        aiLoading: false, aiResult: parsed, aiFlash: true, aiText: "", tab: "ingresos",
         incForm: { ...state.incForm, subtype: parsed.type || "income", amount: parsed.amount ? String(parsed.amount) : "",
           description: parsed.description || "", source: parsed.source || state.incForm.source, date: parsed.date || today() }
       });
@@ -2220,44 +2236,65 @@ function attachEvents() {
     btn.addEventListener("click", () => setState({ expForm: { ...state.expForm, subtype: btn.dataset.subtype } }))
   );
   document.querySelectorAll("[data-subtype][data-form='inc']").forEach(btn =>
-    btn.addEventListener("click", () => setState({ incForm: { ...state.incForm, subtype: btn.dataset.subtype } }))
+    // Al cambiar de tipo, "Para" vuelve a vacío/Mamá: que un ingreso no herede
+    // el destinatario de la última transferencia.
+    btn.addEventListener("click", () => btn.dataset.subtype !== state.incForm.subtype &&
+      setState({ incForm: { ...state.incForm, subtype: btn.dataset.subtype, recipient: "" } }))
   );
 
   const se = (id, cb) => { const el=document.getElementById(id); if(el) el.addEventListener("input",cb); };
-  se("ef-date", e=>{
-    state.expForm.date = e.target.value;
-    const lbl = e.target.closest(".form-group")?.querySelector(".date-label");
-    if(lbl) lbl.textContent = fmtDateDisplay(e.target.value);
+  // Chips: un toque cambia el valor y se redibuja (el scroll se mantiene).
+  document.querySelectorAll("[data-chip]").forEach(btn => btn.addEventListener("click", () => {
+    const key = btn.dataset.form === "exp" ? "expForm" : "incForm";
+    const f = { ...state[key], [btn.dataset.field]: btn.dataset.val };
+    // "Para" no puede ser el mismo que "De".
+    if (key === "incForm" && btn.dataset.field === "from" && f.recipient === f.from) f.recipient = "";
+    setState({ [key]: f });
+  }));
+  // Fecha "Otra": calendario del sistema; se aplica al confirmar.
+  ["ef-date", "if-date"].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("click", () => { try { el.showPicker(); } catch(e) {} });
+    el.addEventListener("change", () => {
+      if (!el.value) return;
+      const key = id === "ef-date" ? "expForm" : "incForm";
+      setState({ [key]: { ...state[key], date: el.value } });
+    });
   });
-  se("ef-amount",   e=>{state.expForm.amount=e.target.value;});
-  se("ef-cat",      e=>{state.expForm.category=e.target.value;});
-  se("ef-desc",     e=>{state.expForm.description=e.target.value;});
-
-  const descEl = document.getElementById("ef-desc");
-  if (descEl) descEl.addEventListener("blur", () => {
-    const cat = inferCategory(state.expForm.description);
-    if (cat) {
+  // Monto: se reformatea mientras se escribe y el botón se actualiza sin redibujar.
+  [["ef-amount", "expForm", "ef-save", "exp"], ["if-amount", "incForm", "if-save", "inc"]].forEach(([id, key, saveId, form]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", () => {
+      state[key].amount = parseAmountInput(el.value);
+      el.value = amountInputValue(state[key].amount);
+      const save = document.getElementById(saveId);
+      if (save && !state.loading) save.innerHTML = saveLabel(form);
+    });
+  });
+  se("ef-desc", e => {
+    state.expForm.description = e.target.value;
+    // La categoría se sugiere mientras se escribe (sin redibujar: el teclado sigue abierto).
+    const cat = inferCategory(e.target.value);
+    if (cat && cat !== state.expForm.category) {
       state.expForm.category = cat;
-      const sel = document.getElementById("ef-cat");
-      if (sel) sel.value = cat;
+      document.querySelectorAll('[data-chip][data-field="category"]').forEach(c => {
+        c.classList.toggle("on", c.dataset.val === cat);
+        if (c.dataset.val === cat) c.parentElement.scrollTo({ left: c.offsetLeft - 8, behavior: "smooth" });
+      });
     }
   });
-  se("ef-paidby",   e=>{state.expForm.paidBy=e.target.value;});
-  se("ef-payment",  e=>{state.expForm.paymentMethod=e.target.value;});
-  se("if-date", e=>{
-    state.incForm.date = e.target.value;
-    const lbl = e.target.closest(".form-group")?.querySelector(".date-label");
-    if(lbl) lbl.textContent = fmtDateDisplay(e.target.value);
+  se("if-desc", e => { state.incForm.description = e.target.value; });
+  // El chip elegido siempre visible en las filas que se deslizan (p. ej. "Otros" puesto por la IA).
+  document.querySelectorAll(".chips.scroll").forEach(row => {
+    const on = row.querySelector(".chip.on");
+    if (on && on.offsetLeft + on.offsetWidth > row.clientWidth) row.scrollLeft = on.offsetLeft - 8;
   });
-  se("if-amount",    e=>{state.incForm.amount=e.target.value;});
-  se("if-from",      e=>{
-    // Re-render para que "Para" no ofrezca al mismo que envía.
-    const from = e.target.value, f = state.incForm;
-    setState({ incForm: { ...f, from, recipient: f.recipient === from ? "" : f.recipient } });
-  });
-  se("if-source",    e=>{state.incForm.source=e.target.value;});
-  se("if-recipient", e=>{state.incForm.recipient=e.target.value;});
-  se("if-desc",      e=>{state.incForm.description=e.target.value;});
+  if (state.aiFlash) setTimeout(() => {
+    state.aiFlash = false;
+    document.querySelector(".ai-flash")?.classList.remove("ai-flash");
+  }, 1700);
   se("ai-text",      e=>{state.aiText=e.target.value;});
 
   const photoInput = document.getElementById("ai-photo-input");
