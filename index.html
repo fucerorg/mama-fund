@@ -131,8 +131,12 @@
   .sibling-balances { display: flex; flex-direction: column; gap: 8px; }
   .sib-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--surface2); border-radius: 10px; }
   .sib-name { font-size: 0.85rem; font-weight: 500; }
+  .sib-name.me { color: var(--accent); }
+  .sib-row.zero { padding: 7px 12px; background: none; border: 1px dashed var(--border); }
+  .sib-row.zero .sib-name { font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+  .sib-row.zero .sib-name.me { color: var(--accent); }
   [data-ledger] { cursor: pointer; }
-  .sib-row[data-ledger]:active, .card[data-ledger]:active { opacity: .7; }
+  .sib-row[data-ledger]:active, .card[data-ledger]:active, .split-row[data-ledger]:active { opacity: .7; }
   .sib-chev { color: var(--muted); font-size: 0.9rem; margin-left: 8px; }
   .ledger-head { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0 14px; border-bottom: 1px solid var(--border); }
   .ledger-bal { font-family: 'DM Serif Display', serif; font-size: 1.6rem; }
@@ -150,12 +154,34 @@
 
   /* Category bars */
   .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-row:last-child { margin-bottom: 0; }
   .bar-label { font-size: 0.8rem; color: var(--muted); width: 110px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar-track { flex: 1; height: 8px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 99px; transition: width .5s ease; }
   .bar-amount { font-size: 0.78rem; color: var(--text); width: 80px; text-align: right; flex-shrink: 0; }
 
   /* Donut chart area */
+  /* Resumen */
+  .hero-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .hero-total { font-family: 'DM Serif Display', serif; font-size: 2.3rem; line-height: 1.1; margin-top: 4px; }
+  .split-bar { display: flex; gap: 3px; height: 8px; margin: 14px 0 4px; }
+  .split-bar > div { border-radius: 99px; min-width: 6px; }
+  .split-row { display: flex; align-items: center; gap: 10px; padding: 11px 0 3px; font-size: 0.85rem; }
+  .split-row + .split-row { border-top: 1px solid var(--border); margin-top: 8px; }
+  .split-row .amt { margin-left: auto; font-family: 'DM Serif Display', serif; font-size: 1.15rem; }
+  .split-row .sub { font-size: 0.7rem; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .share-btn { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; background: rgba(110,231,183,0.1); border: 1px solid rgba(110,231,183,0.3); color: var(--income); border-radius: 8px; padding: 8px 14px; font-family: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+  .flow-row { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; font-size: 0.88rem; }
+  .flow-row .amt { margin-left: auto; font-family: 'DM Serif Display', serif; font-size: 1.15rem; }
+  .flow-sub { display: flex; gap: 10px; font-size: 0.75rem; color: var(--muted); padding: 0 0 4px 12px; }
+  .flow-sub span:last-child { margin-left: auto; }
+  .flow-total { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; font-weight: 600; }
+  .flow-note { font-size: 0.72rem; color: var(--muted); line-height: 1.5; }
+  .cat-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 0.84rem; }
+  .cat-row .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cat-row .pct { color: var(--muted); font-size: 0.75rem; width: 36px; text-align: right; }
+  .cat-row .amt { width: 92px; text-align: right; }
   .chart-wrap { display: flex; align-items: center; gap: 16px; padding: 8px 0; }
   .chart-legend { flex: 1; display: flex; flex-direction: column; gap: 6px; }
   .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
@@ -219,7 +245,7 @@ const CONFIG = {
   FCM_VAPID_PUBLIC_KEY: "BPOCi9tNRee8GGGjP4w_cGr-naBZLtO_sWe0V2XpzT-y7R-wSJEEB1oaZW8itTIT6kQ7SmnokXGk7ijjw57LDMc",
 };
 
-const APP_VERSION = "v1.3.4";
+const APP_VERSION = "v1.3.5";
 
 function today() {
   const d = new Date();
@@ -1659,7 +1685,7 @@ function renderIngresos() {
 // ════════════════════════════════════════════════════
 // HISTORIAL TAB
 // ════════════════════════════════════════════════════
-function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false) {
+function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false, extraHtml="") {
   const f = state[filterKey];
   const years = getYears();
   const months = getLast12Months();
@@ -1686,6 +1712,7 @@ function renderFilterBar(filterKey, onChange, showCategory=false, showSib=false)
         <option value="Mamá" ${state.sibFilter==="Mamá"?"selected":""}>Mamá</option>
         ${CONFIG.SIBLINGS.map(s=>`<option value="${s}" ${state.sibFilter===s?"selected":""}>${s}</option>`).join("")}
       </select>` : ""}
+      ${extraHtml}
     </div>`;
 }
 
@@ -1922,17 +1949,23 @@ async function shareSummary() {
 window.shareSummary = shareSummary;
 
 function renderResumen() {
-  const filterBar = renderFilterBar("resumenFilter", "setResumenFilter");
   const txs    = filterTxs(state.transactions, state.resumenFilter);
   const allTxs = state.transactions;
+  const sum = list => list.reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
 
-  const { sib, mamaIngresos, mamaGastos, mamaBalance, totalIngresos, totalGastos } = computeBalances(txs);
-  const allBal = sortedBalances(allTxs);
+  // Estado actual (siempre sobre todos los movimientos).
   const rt = computeBalances(allTxs);
+  const allBal = sortedBalances(allTxs);
+  const enManos = allBal.reduce((s, x) => s + x.net, 0);
 
+  // Flujo del período elegido. Cuenta de mamá + en manos de hermanos = resultado.
+  const p = computeBalances(txs);
+  const sib = p.sib;
+  const periodManos = sortedBalances(txs).reduce((s, x) => s + x.net, 0);
   // Solo lo que sale de la cuenta de mamá; entre hermanos es un pasamanos.
-  const totalTransfers = txs.filter(t=>t.type==="transfer" && !CONFIG.SIBLINGS.includes(t.paidBy)).reduce((s,t)=>s+parseFloat(t.amount||0),0);
-  const totalExpHermanos = txs.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  const totalTransfers = sum(txs.filter(t => t.type === "transfer" && !CONFIG.SIBLINGS.includes(t.paidBy)));
+  const totalExpHermanos = sum(txs.filter(t => t.type === "expense"));
+  const totalExpMama = sum(txs.filter(t => t.type === "mother_expense"));
 
   const byCat = {};
   txs.filter(t=>t.type==="expense"||t.type==="mother_expense").forEach(t=>{
@@ -1940,8 +1973,8 @@ function renderResumen() {
     byCat[cat] = (byCat[cat]||0) + parseFloat(t.amount||0);
   });
   const catEntries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
-  const catMax = Math.max(...Object.values(byCat),1);
-  const totalAllExp = totalExpHermanos + txs.filter(t=>t.type==="mother_expense").reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  const totalAllExp = totalExpHermanos + totalExpMama;
+  const catColor = i => CONFIG.CAT_COLORS[i % CONFIG.CAT_COLORS.length];
 
   const bySibSpent = {};
   CONFIG.SIBLINGS.forEach(s=>bySibSpent[s]=0);
@@ -1955,76 +1988,85 @@ function renderResumen() {
     .filter(x=>x.val>0).sort((a,b)=>b.val-a.val);
   const aportesMax = Math.max(...aportesEntries.map(x=>x.val),1);
 
-  const donut = buildDonut(catEntries, totalAllExp);
-
-  const filterLabel = state.resumenFilter==="all" ? "acumulado total"
-    : state.resumenFilter==="ytd" ? "año en curso"
-    : state.resumenFilter.length===4 ? `año ${state.resumenFilter}`
-    : formatMonth(state.resumenFilter);
+  const filterLabel = periodLabel(state.resumenFilter);
+  const filterBar = renderFilterBar("resumenFilter", "setResumenFilter", false, false,
+    `<button class="share-btn" onclick="shareSummary()" aria-label="Compartir resumen de ${filterLabel}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>Compartir</button>`);
+  const signed = v => (v > 0 ? "+" : "") + fmt(v);
+  const tone = v => v >= 0 ? "var(--income)" : "var(--expense)";
+  // Proporción cuenta / en manos (las partes negativas no se dibujan).
+  const barA = Math.max(rt.mamaBalance, 0), barB = Math.max(enManos, 0);
 
   return `
     <div class="section" style="padding-top:14px;">
       <div class="section-label">Estado actual ${state.refreshing?`<div class='spinner' style='display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;'></div>`:""}</div>
-      <div class="cards-row">
-        <div class="card wide" style="background:rgba(196,181,253,0.06);border-color:rgba(196,181,253,0.2);">
-          <div class="card-label">💰 Saldo total mamá</div>
-          <div class="card-value ${rt.systemBalance>=0?"income":"expense"}" style="font-size:1.8rem;">${fmt(rt.systemBalance)}</div>
-          <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">Todos los ingresos − todos los gastos</div>
+      <div class="card">
+        <div class="hero-label">💰 Saldo total de mamá</div>
+        <div class="hero-total" style="color:${tone(rt.systemBalance)}">${fmt(rt.systemBalance)}</div>
+        ${barA + barB > 0 ? `<div class="split-bar">
+          ${barA ? `<div style="flex:${barA};background:var(--mother)"></div>` : ""}
+          ${barB ? `<div style="flex:${barB};background:var(--income)"></div>` : ""}
+        </div>` : ""}
+        <div class="split-row" data-ledger="Mamá">
+          <span class="dot" style="background:var(--mother)"></span>
+          <div><div>🏦 En su cuenta</div><div class="sub">Tocá para ver el estado de cuenta</div></div>
+          <span class="amt" style="color:${rt.mamaBalance >= 0 ? "var(--mother)" : "var(--expense)"}">${fmt(rt.mamaBalance)}</span><span class="sib-chev">›</span>
         </div>
-        <div class="card" data-ledger="Mamá">
-          <div class="card-label">🏦 Saldo cuenta mamá ›</div>
-          <div class="card-value ${rt.mamaBalance>=0?"mother":"expense"}">${fmt(rt.mamaBalance)}</div>
-          <div style="font-size:0.68rem;color:var(--muted);margin-top:4px;">En su cuenta bancaria</div>
+        <div class="split-row">
+          <span class="dot" style="background:var(--income)"></span>
+          <div><div>👥 En manos de hermanos</div><div class="sub">Detalle por hermano abajo</div></div>
+          <span class="amt" style="color:${tone(enManos)}">${fmt(enManos)}</span><span class="sib-chev" style="visibility:hidden">›</span>
         </div>
-        <div class="card">
-          <div class="card-label">👥 En manos hermanos</div>
-          <div class="card-value income">${fmt(allBal.reduce((s,x)=>s+x.net,0))}</div>
-          <div style="font-size:0.68rem;color:var(--muted);margin-top:4px;">Suma de saldos operativos</div>
-        </div>
+      </div>
+      <div class="sibling-balances" style="margin-top:10px;">
+        ${allBal.map(s=>Math.round(s.net) === 0 ? `
+          <div class="sib-row zero" data-ledger="${s.name}">
+            <div class="sib-name${s.name === state.user?.firstName ? " me" : ""}">👤 ${s.name}</div>
+            <div style="display:flex;align-items:center;flex-shrink:0;"><span class="sib-detail" style="margin:0">Sin plata en mano</span><span class="sib-chev">›</span></div>
+          </div>` : `
+          <div class="sib-row" data-ledger="${s.name}">
+            <div style="min-width:0;">
+              <div class="sib-name${s.name === state.user?.firstName ? " me" : ""}">👤 ${s.name}</div>
+              <div class="sib-detail">Recibió ${fmt(s.received)}${s.sent>0?` · Pasó ${fmt(s.sent)}`:""} · Gastó ${fmt(s.spent)}${s.aportes>0?` · Aportó ${fmt(s.aportes)}`:""}</div>
+            </div>
+            <div style="display:flex;align-items:center;flex-shrink:0;"><div class="sib-balance ${s.net>=0?"pos":"neg"}">${fmt(s.net)}</div><span class="sib-chev">›</span></div>
+          </div>`).join("")}
       </div>
     </div>
 
-    ${filterBar}
-
-    <div style="padding:10px 16px 0;">
-      <button onclick="shareSummary()" style="width:100%;background:rgba(110,231,183,0.1);border:1px solid rgba(110,231,183,0.3);color:var(--income);border-radius:10px;padding:10px;font-family:inherit;font-size:0.85rem;font-weight:600;cursor:pointer;">📤 Compartir resumen de ${filterLabel}</button>
+    <div class="section" style="margin-top:8px;padding-top:0;">
+      ${filterBar.replace('padding:12px 16px 0;', 'padding:12px 0 0;')}
     </div>
 
-    <div class="section" style="margin-top:12px;">
+    <div class="section" style="padding-top:14px;">
       <div class="section-label">Flujo — ${filterLabel}</div>
-      <div class="cards-row">
-        <div class="card"><div class="card-label">Total ingresos</div><div class="card-value mother">${fmt(totalIngresos)}</div></div>
-        <div class="card"><div class="card-label">Total transferido</div><div class="card-value income">${fmt(totalTransfers)}</div></div>
-        <div class="card"><div class="card-label">Total gastos</div><div class="card-value expense">${fmt(totalGastos)}</div></div>
-        <div class="card"><div class="card-label">Gastos hermanos</div><div class="card-value expense">${fmt(totalExpHermanos)}</div></div>
-        <div class="card"><div class="card-label">Saldo cuenta mamá</div><div class="card-value ${mamaBalance>=0?"mother":"expense"}">${fmt(mamaBalance)}</div></div>
-        <div class="card"><div class="card-label">Balance hermanos</div><div class="card-value ${(totalTransfers-totalExpHermanos)>=0?"income":"expense"}">${fmt(totalTransfers-totalExpHermanos)}</div></div>
+      <div class="card">
+        <div class="flow-row"><span>Ingresos</span><span class="amt" style="color:var(--mother)">${fmt(p.totalIngresos)}</span></div>
+        <div class="flow-row"><span>Gastos</span><span class="amt" style="color:var(--expense)">−${fmt(p.totalGastos)}</span></div>
+        <div class="flow-sub"><span>Pagados por hermanos</span><span>${fmt(totalExpHermanos)}</span></div>
+        <div class="flow-sub"><span>Pagados desde la cuenta de mamá</span><span>${fmt(totalExpMama)}</span></div>
+        <div class="flow-row flow-total"><span>Resultado</span><span class="amt" style="color:${tone(p.systemBalance)}">${signed(p.systemBalance)}</span></div>
+        <div class="flow-sub" style="padding-top:4px;"><span>Cuenta de mamá</span><span>${signed(p.mamaBalance)}</span></div>
+        <div class="flow-sub"><span>En manos de hermanos</span><span>${signed(periodManos)}</span></div>
+        <div class="flow-note" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+          📤 Transferido a hermanos: <strong style="color:var(--income)">${fmt(totalTransfers)}</strong> · no cambia el total, la plata pasa de la cuenta a manos de hermanos.
+        </div>
       </div>
     </div>
 
     ${catEntries.length ? `
     <div class="section" style="margin-top:16px;">
       <div class="section-label">Gastos por categoría</div>
-      <div class="card wide">
-        <div class="chart-wrap">
-          ${donut}
-          <div class="chart-legend">
-            ${catEntries.map(([cat,amt],i)=>`
-              <div class="legend-item">
-                <div class="legend-dot" style="background:${CONFIG.CAT_COLORS[i%CONFIG.CAT_COLORS.length]}"></div>
-                <span style="color:var(--muted)">${cat}</span>
-                <span style="margin-left:auto;font-weight:600;">${Math.round(amt/totalAllExp*100)}%</span>
-              </div>`).join("")}
-          </div>
+      <div class="card">
+        <div class="split-bar" style="margin-top:2px;margin-bottom:10px;">
+          ${catEntries.map(([,amt],i)=>`<div style="flex:${amt};background:${catColor(i)}"></div>`).join("")}
         </div>
-        <div style="margin-top:12px;">
-          ${catEntries.map(([cat,amt],i)=>`
-            <div class="bar-row">
-              <div class="bar-label">${cat}</div>
-              <div class="bar-track"><div class="bar-fill" style="width:${Math.round(amt/catMax*100)}%;background:${CONFIG.CAT_COLORS[i%CONFIG.CAT_COLORS.length]}"></div></div>
-              <div class="bar-amount">${fmt(amt)}</div>
-            </div>`).join("")}
-        </div>
+        ${catEntries.map(([cat,amt],i)=>`
+          <div class="cat-row">
+            <span class="dot" style="background:${catColor(i)}"></span>
+            <span class="name">${cat}</span>
+            <span class="pct">${Math.round(amt/totalAllExp*100)}%</span>
+            <span class="amt">${fmt(amt)}</span>
+          </div>`).join("")}
       </div>
     </div>` : ""}
 
@@ -2042,7 +2084,7 @@ function renderResumen() {
     </div>` : ""}
 
     ${aportesEntries.length ? `
-    <div class="section" style="margin-top:16px;">
+    <div class="section" style="margin-top:16px;padding-bottom:8px;">
       <div class="section-label">Aportes por hermano</div>
       <div class="card wide">
         ${aportesEntries.map((x,i)=>`
@@ -2052,21 +2094,7 @@ function renderResumen() {
             <div class="bar-amount">${fmt(x.val)}</div>
           </div>`).join("")}
       </div>
-    </div>` : ""}
-
-    <div class="section" style="margin-top:16px;padding-bottom:8px;">
-      <div class="section-label">Saldo operativo por hermano (plata de mamá en mano) · tocá para ver el detalle</div>
-      <div class="sibling-balances">
-        ${allBal.map(s=>`
-          <div class="sib-row" data-ledger="${s.name}">
-            <div>
-              <div class="sib-name">👤 ${s.name}</div>
-              <div class="sib-detail">Recibió ${fmt(s.received)}${s.sent>0?` · Pasó ${fmt(s.sent)}`:""} · Gastó ${fmt(s.spent)}${s.aportes>0?` · Aportó ${fmt(s.aportes)}`:""}</div>
-            </div>
-            <div style="display:flex;align-items:center;"><div class="sib-balance ${s.net>=0?"pos":"neg"}">${fmt(s.net)}</div><span class="sib-chev">›</span></div>
-          </div>`).join("")}
-      </div>
-    </div>`;
+    </div>` : ""}`;
 }
 
 // ── Tutorial ───────────────────────────────────────────────
@@ -2123,32 +2151,6 @@ function renderPushPrompt() {
 }
 
 // ── SVG donut chart ────────────────────────────────────────
-function buildDonut(entries, total) {
-  if (!total) return "";
-  const r = 40, cx = 50, cy = 50, stroke = 14;
-  const circ = 2 * Math.PI * r;
-  let offset = 0;
-  const slices = entries.map(([cat,amt],i) => {
-    const pct = amt / total;
-    const dash = pct * circ;
-    const gap  = circ - dash;
-    const s = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
-      stroke="${CONFIG.CAT_COLORS[i%CONFIG.CAT_COLORS.length]}"
-      stroke-width="${stroke}"
-      stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}"
-      stroke-dashoffset="${(-offset * circ).toFixed(2)}"
-      transform="rotate(-90 ${cx} ${cy})"/>`;
-    offset += pct;
-    return s;
-  }).join("");
-  return `<svg viewBox="0 0 100 100" width="100" height="100" style="flex-shrink:0;">
-    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="${stroke}"/>
-    ${slices}
-    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle"
-      style="fill:var(--text);font-size:9px;font-family:'DM Sans',sans-serif;">${fmt(total)}</text>
-  </svg>`;
-}
-
 // ── Image compression ──────────────────────────────────────
 function compressImage(file, maxPx=800, quality=0.6) {
   return new Promise(resolve => {
